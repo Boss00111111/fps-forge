@@ -1,0 +1,38 @@
+{
+  "name": "boost-pc-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Modern gaming booster desktop app for FPS optimization on Windows.",
+  "main": "electron/main.cjs",
+  "author": "boost-pc-desktop",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix client",
+    "install:admin": "npm install --prefix admin-console",
+    "dev:client": "npm run dev --prefix client",
+    "dev": "concurrently -n web,el -c cyan,magenta \"npm run dev --prefix client\" \"wait-on http://127.0.0.1:5175 && electron .\"",
+    "build:client": "npm run build --prefix client",
+    "license:bundle-url": "node scripts/write-license-runtime.mjs",
+    "dist": "npm run license:bundle-url && npm run build:client && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win portable",
+    "dist:release": "node scripts/ensure-license-url.mjs && npm run dist",
+    "dist:admin": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist --prefix admin-console",
+    "keys:gen": "node scripts/generate-license-keys.mjs"
+  },
+  "build": {
+    "appId": "com.boostpc.desktop",
+    "productName": "FPS Forge",
+    "directories": { "output": "release" },
+    "files": ["electron/**/*.cjs", "package.json"],
+    "extraResources": [{ "from": "client/dist", "to": "client/dist", "filter": ["**/*"] }],
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }]
+    },
+    "portable": { "artifactName": "FPS-Forge-${version}-Portable.exe" }
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^8.0.0"
+  }
+}

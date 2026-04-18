@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FPS Forge License Admin</title>
+    <style>
+      body { font-family: Segoe UI, sans-serif; margin: 24px; background:#0e1727; color:#dbe8ff; }
+      .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+      input, select, button { padding:8px 10px; border-radius:6px; border:1px solid #35507b; background:#13233d; color:#dbe8ff; }
+      button { cursor:pointer; background:#2f6ded; border-color:#4a7ff0; }
+      table { width:100%; border-collapse: collapse; margin-top:14px; }
+      th, td { border:1px solid #29466d; padding:8px; text-align:left; font-size:13px; }
+      th { background:#10233d; }
+      .muted { color:#9db7dc; font-size:13px; }
+      .warn { color:#ffb4a8; }
+    </style>
+  </head>
+  <body>
+    <h2>FPS Forge License Admin</h2>
+    <p class="muted">Use your ADMIN_TOKEN. You can list activations, reset keys, and create new keys.</p>
+
+    <div class="row">
+      <input id="base" placeholder="API base e.g. https://your-domain" style="min-width:320px" />
+      <input id="token" placeholder="ADMIN_TOKEN" style="min-width:220px" />
+      <button onclick="loadRows()">Load activations</button>
+    </div>
+
+    <div class="row">
+      <input id="resetKey" placeholder="Key to reset" style="min-width:280px" />
+      <button onclick="resetKey()">Reset key</button>
+    </div>
+
+    <div class="row">
+      <input id="createCount" type="number" value="10" min="1" max="500" />
+      <select id="createTier">
+        <option value="premium_monthly">premium_monthly</option>
+        <option value="premium_lifetime">premium_lifetime</option>
+        <option value="free">free</option>
+      </select>
+      <input id="daysValid" type="number" value="30" min="0" />
+      <button onclick="createKeys()">Create keys</button>
+    </div>
+
+    <p id="msg" class="muted"></p>
+    <div id="created" class="muted"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Machine ID</th>
+          <th>Tier</th>
+          <th>Expires</th>
+          <th>Activated</th>
+          <th>Last Seen</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <script>
+      function getBase() {
+        const v = document.getElementById("base").value.trim();
+        return v.replace(/\/$/, "");
+      }
+      function getToken() { return document.getElementById("token").value.trim(); }
+      function setMsg(t, warn = false) {
+        const el = document.getElementById("msg");
+        el.textContent = t;
+        el.className = warn ? "warn" : "muted";
+      }
+
+      async function api(path, options = {}) {
+        const base = getBase();
+        const token = getToken();
+        const res = await fetch(base + path, {
+          ...options,
+          headers: { "Content-Type": "application/json", "x-admin-token": token, ...(options.headers || {}) },
+        });
+        return res.json();
+      }
+
+      async function loadRows() {
+        try {
+          const data = await api("/admin/activations");
+          if (!data.ok) return setMsg(data.message || "Failed loading", true);
+          const tbody = document.getElementById("rows");
+          tbody.innerHTML = "";
+          for (const r of data.rows || []) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${r.key}</td><td>${r.machineId}</td><td>${r.tier || ""}</td><td>${r.expiresAt || ""}</td><td>${r.activatedAt || ""}</td><td>${r.lastSeenAt || ""}</td>`;
+            tbody.appendChild(tr);
+          }
+          setMsg(`Loaded ${data.rows?.length || 0} activation(s).`);
+        } catch (e) { setMsg(String(e), true); }
+      }
+
+      async function resetKey() {
+        const key = document.getElementById("resetKey").value.trim();
+        if (!key) return;
+        const data = await api("/admin/reset", { method: "POST", body: JSON.stringify({ key }) });
+        if (!data.ok) return setMsg(data.message || "Reset failed", true);
+        setMsg("Key reset done.");
+        loadRows();
+      }
+
+      async function createKeys() {
+        const count = Number(document.getElementById("createCount").value || 10);
+        const tier = document.getElementById("createTier").value;
+        const daysValid = Number(document.getElementById("daysValid").value || 0);
+        const data = await api("/admin/create", { method: "POST", body: JSON.stringify({ count, tier, daysValid }) });
+        if (!data.ok) return setMsg(data.message || "Create failed", true);
+        const created = (data.created || []).map((x) => x.key).join("<br/>");
+        document.getElementById("created").innerHTML = created ? `<b>Created keys:</b><br/>${created}` : "";
+        setMsg(`Created ${data.created?.length || 0} key(s).`);
+      }
+    </script>
+  </body>
+  </html>

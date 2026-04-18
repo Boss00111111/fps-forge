@@ -1,0 +1,43 @@
+{
+  "name": "fps-forge-admin",
+  "version": "1.0.0",
+  "description": "FPS Forge Admin Console",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.fpsforge.admin",
+    "productName": "FPS Forge Admin",
+    "directories": {
+      "output": "../release-admin"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "FPS-Forge-Admin-${version}-Portable.exe"
+    }
+  },
+  "dependencies": {
+    "boost-pc-desktop": "file:.."
+  }
+}

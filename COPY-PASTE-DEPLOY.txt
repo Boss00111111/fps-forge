@@ -1,0 +1,99 @@
+================================================================================
+FPS FORGE — COPY / PASTE KORACI (email već postavljen)
+================================================================================
+Tvoj email za Git: arkoboss007@outlook.com
+Zamijeni samo: GITHUB_USER, IME_REPOA, RENDER_URL (stvarni link sa Rendera)
+
+--------------------------------------------------------------------------------
+1) GIT — jednom na cijelom PC-u (PowerShell, bilo gdje)
+--------------------------------------------------------------------------------
+
+git config --global user.email "arkoboss007@outlook.com"
+git config --global user.name "Arko"
+
+--------------------------------------------------------------------------------
+2) GIT — push koda u GitHub repo (PowerShell)
+--------------------------------------------------------------------------------
+
+cd "c:\Users\arkob\OneDrive\Dokumente\boost-pc-desktop"
+
+git init
+git remote add origin https://github.com/GITHUB_USER/IME_REPOA.git
+
+git add .
+git commit -m "FPS Forge + license server"
+git branch -M main
+git push -u origin main
+
+(Ako remote već postoji:)
+git remote set-url origin https://github.com/GITHUB_USER/IME_REPOA.git
+
+(Ako push kaže README konflikt na GitHubu:)
+git pull origin main --allow-unrelated-histories
+git push -u origin main
+
+Primjer ako ti je user Boss00111111 a repo fps-forge:
+git remote set-url origin https://github.com/Boss00111111/fps-forge.git
+
+--------------------------------------------------------------------------------
+3) GITHUB — u browseru
+--------------------------------------------------------------------------------
+
+https://github.com/GITHUB_USER/IME_REPOA
+
+Provjeri da vidiš: folder license-server, fajl render.yaml
+
+--------------------------------------------------------------------------------
+4) RENDER — u browseru (klik redom)
+--------------------------------------------------------------------------------
+
+https://render.com  → Sign up / Log in (može "Sign up with GitHub")
+
+Dashboard → gore "New +" → "Blueprint"
+
+Connect repository → izaberi IME_REPOA
+
+Apply / Create (potvrdi deploy servisa)
+
+Otvori taj Web Service → kopiraj URL (https://....onrender.com) = RENDER_URL
+
+Environment → Add Environment Variable:
+  Key:   ADMIN_TOKEN
+  Value: (dug random tekst, npr. ForgeLabsSecret2026ArkoXy9)
+
+Save → ako traži, Manual Deploy
+
+Disks → Add Disk → Mount path: /data → Save
+
+Test u browseru (novi tab):
+  RENDER_URL/health
+  (primjer: https://fps-forge-abc123.onrender.com/health)
+
+--------------------------------------------------------------------------------
+5) BUILD .EXE ZA GUMROAD (PowerShell)
+--------------------------------------------------------------------------------
+
+cd "c:\Users\arkob\OneDrive\Dokumente\boost-pc-desktop"
+
+$env:FPSFORGE_LICENSE_BUNDLE_API="RENDER_URL_OVDJE_BEZ_NAVODNIH_GRESKE"
+npm run dist:release
+
+Primjer (ZAMIJENI svojim stvarnim linkom):
+$env:FPSFORGE_LICENSE_BUNDLE_API="https://fps-forge-xxxx.onrender.com"
+npm run dist:release
+
+Gotov fajl: folder release\  →  FPS-Forge-...-Portable.exe  → upload na Gumroad
+
+--------------------------------------------------------------------------------
+6) FPS FORGE ADMIN (na tvom PC-u)
+--------------------------------------------------------------------------------
+
+Save API  = isti RENDER_URL (samo https://... bez /health)
+
+ADMIN_TOKEN = isti kao na Renderu
+
+Load keys / Create keys → šalješ kupcu FFG- kljuc
+
+================================================================================
+Kraj.
+================================================================================

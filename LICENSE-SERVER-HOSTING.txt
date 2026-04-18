@@ -1,0 +1,54 @@
+FPS Forge — hostovan license server (Render)
+==============================================
+
+VAZNO (zasto si vidio "Not Found")
+----------------------------------
+Tekst "tvoj-servis" u starim uputstvima bio je SAMO PRIMJER — to NIJE pravi internet
+adres. Ti moras kopirati URL koji Render STVARNO da tvom servisu, npr:
+
+  https://fpsforge-license-xxxx.onrender.com
+
+To vidis u Render dashboardu: tvoj Web Service → gore URL (copy-paste).
+
+Ako u browser upises lazni host, dobices 404 ili praznu stranu — to nije bug u kodu.
+
+
+Brzi checklist
+--------------
+1) GitHub: pushaj projekat (bar folder boost-pc-desktop / cijeli repo).
+
+2) render.com → New → Blueprint → izaberi repo → deploy.
+
+3) Kad servis zivi: otvori TACAN URL iz dashboarda:
+      https://<IME-KOJE-RENDER-DAJE>.onrender.com/health
+   Trebas vidjeti JSON tipa: {"ok":true,"keys":0,"activations":0}
+
+   Ako prvi put "spava" (free tier), pricekaj 30–60 sekundi i refresh.
+
+4) Environment na Renderu:
+   - ADMIN_TOKEN = jak random string (isti ces koristiti u FPS Forge Admin)
+
+5) Disk (preporuceno):
+   - Storage → Add Disk → mount path: /data
+   - Env DATA_DIR=/data (vec u render.yaml)
+   Bez diska redeploy moze obrisati keys.json.
+
+6) Migracija kljuceva: kopiraj lokalni license-server/keys.json na disk ili
+   generisi nove kljuceve preko https://.../admin-panel (ADMIN_TOKEN).
+
+7) Novi .exe za kupce (ubaci STVARNI URL, ne primjer):
+
+   cd boost-pc-desktop
+   $env:FPSFORGE_LICENSE_BUNDLE_API="https://IME-KOJE-RENDER-DAJE.onrender.com"
+   npm run dist
+
+8) FPS Forge Admin → Save API = isti URL, token = ADMIN_TOKEN.
+
+
+Lokalni Docker test
+-------------------
+cd license-server
+docker build -t fpsforge-lic .
+docker run -e ADMIN_TOKEN=test -e PORT=3847 -p 3847:3847 -v licdata:/data -e DATA_DIR=/data fpsforge-lic
+
+Browser: http://localhost:3847/health

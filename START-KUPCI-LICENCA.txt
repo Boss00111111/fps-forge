@@ -1,0 +1,114 @@
+================================================================================
+FPS FORGE — OD NULE DO TOGA DA KUPAC MOZE SVE (aktivacija radi)
+================================================================================
+Sve sto TI moras uraditi je ispod. Nema tri slike, jedan tok.
+
+--------------------------------------------------------------------------------
+DIO A — KOD NA GITHUBU (jednom)
+--------------------------------------------------------------------------------
+
+A1) Na github.com napravi novi repo (npr. fps-forge). NE diraj "tvoj-servis" nigde.
+
+A2) Na svom PC-u otvori PowerShell:
+
+    cd "c:\Users\arkob\OneDrive\Dokumente\boost-pc-desktop"
+
+A3) Jednom podesi Git (email koji koristis na GitHubu):
+
+    git config --global user.email "tvoj@email.com"
+    git config --global user.name "TvojeIme"
+
+A4) Prvi put u ovom folderu:
+
+    git init
+    git remote add origin https://github.com/TVOJ_USER/TVOJ_REPO.git
+    (ako remote vec postoji: git remote set-url origin https://github.com/...)
+
+    git add .
+    git commit -m "FPS Forge"
+
+A5) Ako na GitHubu repo vec ima README (prazan commit):
+
+    git pull origin main --allow-unrelated-histories
+    (ako pita merge — prihvati / sacuvaj)
+    git push -u origin main
+
+A6) Otvori repo na GitHubu u browseru — moras VIDJETI foldere:
+    license-server   render.yaml   electron   client   ...
+
+--------------------------------------------------------------------------------
+DIO B — LICENSE SERVER NA RENDERU (besplatno, internet)
+--------------------------------------------------------------------------------
+
+B1) render.com → Sign up / Login
+
+B2) New → Blueprint → izaberi GitHub repo iz A dijela → Deploy
+
+B3) Kad servis postane "Live", kopiraj URL sa vrha stranice servisa.
+    Primjer oblika:  https://nesto-nesto.onrender.com
+    TO je tvoj PRAVI API. Nema izmisljanja imena.
+
+B4) U Renderu: Environment → Add:
+    ADMIN_TOKEN = (dug random tekst, kopiraj ga negdje sigurno)
+
+B5) Storage → Add Disk → Mount path: /data
+    (da ti se kljucevi ne izbrisu poslije redeploya)
+
+B6) U browseru otvori:  https://TVOJ-URL/health
+    Mora JSON: {"ok":true,"keys":...,"activations":...}
+    Ako prvi put spava — pricekaj 60 sekundi i refresh.
+
+B7) Kljucevi na serveru:
+    - Otvori https://TVOJ-URL/admin-panel
+    - Upisi ADMIN_TOKEN
+    - Create keys (ili uploaduj keys.json na disk ako znas)
+
+--------------------------------------------------------------------------------
+DIO C — .EXE ZA KUPCE (sa ugradjenim URL-om)
+--------------------------------------------------------------------------------
+
+C1) PowerShell, u istom folderu boost-pc-desktop — STVARNI Render URL (ne primjer):
+
+    .\scripts\build-for-customers.ps1 -LicenseApiUrl "https://STVARNI-IME.onrender.com"
+
+    ILI rucno:
+
+    $env:FPSFORGE_LICENSE_BUNDLE_API="https://STVARNI-IME.onrender.com"
+    npm run dist:release
+
+    dist:release = obavezno https URL u exe (kupac onda samo unosi FFG kljuc).
+
+C2) Gotov fajl je u folderu:  release\
+    Taj .exe stavis na Gumroad / Discord downloads.
+
+--------------------------------------------------------------------------------
+DIO D — TI (admin) kad prodajes
+--------------------------------------------------------------------------------
+
+D1) Pokreni FPS Forge Admin na svom PC-u
+
+D2) Save API = isti https://... kao Render
+
+D3) Token polje = isti ADMIN_TOKEN kao na Renderu
+
+D4) Load keys — dajes kupcu jedan FFG- kljuc koji je "free" i odgovarajuci tier
+    (monthly vs lifetime).
+
+--------------------------------------------------------------------------------
+DIO E — KUPAC
+--------------------------------------------------------------------------------
+
+E1) Skine tvoj .exe (novi iz C dijela ili i stari build — vidi ispod).
+
+E2) Ako pise da je server offline: u istom prozoru za aktivaciju zalijepi
+    tvoj PRAVI Render URL (https://....onrender.com), klikni "Sacuvaj adresu",
+    pa tek onda unesi FFG kljuc i "Aktiviraj".
+
+E3) Upise FFG kljuc i Activate.
+
+E4) Ako i dalje ne radi — Render nije Live, ili pogresan URL, ili kljuc nije
+    na tom serveru (keys.json).
+
+================================================================================
+Kraj. Jedan fajl = cijeli zivotni ciklus.
+================================================================================

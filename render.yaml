@@ -1,0 +1,18 @@
+# Render Blueprint — FPS Forge license API
+# https://render.com/docs/blueprint-spec
+#
+# After deploy: set ADMIN_TOKEN in Render dashboard (Environment).
+# Attach a persistent disk mounted at /data so keys survive redeploys.
+services:
+  - type: web
+    name: fpsforge-license
+    runtime: docker
+    dockerfilePath: ./license-server/Dockerfile
+    dockerContext: ./license-server
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: ADMIN_TOKEN
+        sync: false

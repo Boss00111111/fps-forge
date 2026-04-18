@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FPS Forge Admin</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { font-family: Segoe UI, Arial, sans-serif; background: #0b111b; color: #e6edf6; margin: 0; }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 20px; }
+      .card { background: #111a28; border: 1px solid #21314a; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+      h1,h2 { margin-top: 0; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      input,select,button { background: #0f1521; color: #e6edf6; border: 1px solid #2a3f60; border-radius: 8px; padding: 8px 10px; }
+      input,select { min-width: 210px; }
+      button { cursor: pointer; }
+      button.primary { background: #2f7dff; border-color: #2f7dff; color: #fff; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+      th, td { border-bottom: 1px solid #24334d; padding: 8px; text-align: left; }
+      .muted { color: #8ea7cb; font-size: 12px; }
+      .log { margin-top: 8px; color: #7fd2ff; white-space: pre-wrap; }
+      .pill { display: inline-block; padding: 2px 8px; border: 1px solid #36517d; border-radius: 999px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>FPS Forge Admin Console</h1>
+
+      <div class="card">
+        <h2>Connection</h2>
+        <div class="row">
+          <span class="pill" id="apiBase">API: loading...</span>
+          <span class="pill" id="healthState">Health: unknown</span>
+        </div>
+        <p class="muted">Unesi ADMIN_TOKEN i klikni akcije. Ovo radi sa tvojim license-server backendom.</p>
+        <div class="row">
+          <input id="adminToken" placeholder="ADMIN_TOKEN" />
+          <input id="apiBaseInput" placeholder="http://127.0.0.1:3847" />
+          <button id="btnSaveBase">Save API</button>
+          <button id="btnStartServer">Start Local Server</button>
+          <button id="btnHealth">Refresh Health</button>
+          <button id="btnLoad" class="primary">Load Activations</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Create Keys</h2>
+        <div class="row">
+          <input id="createCount" type="number" min="1" max="500" value="10" />
+          <select id="createTier">
+            <option value="premium_monthly">premium_monthly</option>
+            <option value="premium_lifetime">premium_lifetime</option>
+            <option value="free">free</option>
+          </select>
+          <input id="createDays" type="number" min="0" value="30" />
+          <button id="btnCreate" class="primary">Create Keys</button>
+        </div>
+        <p class="muted">`daysValid = 0` znaci bez expiry (lifetime).</p>
+      </div>
+
+      <div class="card">
+        <h2>Reset Activation</h2>
+        <div class="row">
+          <input id="resetKey" placeholder="FFG-XXXX-XXXX-XXXX-XXXX" />
+          <button id="btnReset">Reset Key Activation</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>All Keys (Inventory)</h2>
+        <div class="row">
+          <span class="muted" id="rowsCount">0 rows</span>
+          <select id="statusFilter">
+            <option value="all">all</option>
+            <option value="free">free</option>
+            <option value="activated">activated</option>
+            <option value="expired">expired</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Status</th>
+              <th>Tier</th>
+              <th>Expires</th>
+              <th>Machine ID</th>
+              <th>Activated</th>
+              <th>Last Seen</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="log" id="log"></div>
+    </div>
+
+    <script>
+      const el = (id) => document.getElementById(id);
+      const log = (msg) => (el("log").textContent = String(msg || ""));
+      const token = () => el("adminToken").value.trim();
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      async function refreshBaseAndHealth() {
+        const b = await window.adminApi.getBase();
+        el("apiBase").textContent = `API: ${b.apiBase || "-"}`;
+        el("apiBaseInput").value = b.apiBase || "";
+        const h = await window.adminApi.health();
+        el("healthState").textContent = h.ok ? `Health: OK (keys ${h.keys}, activations ${h.activations})` : `Health: FAIL`;
+        if (!h.ok) log(h.message || "Health check failed");
+      }
+
+      async function saveApiBase() {
+        const value = el("apiBaseInput").value.trim();
+        if (!value) {
+          log("Enter API base first, example: http://127.0.0.1:3847");
+          return;
+        }
+        const r = await window.adminApi.setBase(value);
+        if (!r?.ok) {
+          log(r?.message || "Could not save API base.");
+          return;
+        }
+        log(`Saved API base: ${r.apiBase}`);
+        await refreshBaseAndHealth();
+      }
+
+      async function startLocalServer() {
+        const r = await window.adminApi.startLocalServer(token());
+        if (!r?.ok) {
+          log(r?.message || "Could not start local server.");
+          return;
+        }
+        log("Local server start triggered. Waiting for health...");
+        await sleep(2000);
+        await refreshBaseAndHealth();
+      }
+
+      async function ensureServerOnline() {
+        const h1 = await window.adminApi.health();
+        if (h1?.ok) return true;
+        const start = await window.adminApi.startLocalServer(token());
+        if (!start?.ok) {
+          log(start?.message || "Cannot start local server.");
+          return false;
+        }
+        for (let i = 0; i < 8; i++) {
+          await sleep(1000);
+          const hx = await window.adminApi.health();
+          if (hx?.ok) return true;
+        }
+        log("Server still offline after auto-start. Check npm/node install and try again.");
+        return false;
+      }
+
+      function renderRows(rows) {
+        const body = el("tableBody");
+        body.innerHTML = "";
+        const filter = el("statusFilter").value;
+        const filtered = (rows || []).filter((r) => {
+          if (filter === "all") return true;
+          if (filter === "expired") return Boolean(r.expired);
+          return String(r.status || "") === filter;
+        });
+        for (const r of filtered) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${r.key || ""}</td>
+            <td>${r.expired ? "expired" : (r.status || "-")}</td>
+            <td>${r.tier || ""}</td>
+            <td>${r.expiresAt || "-"}</td>
+            <td>${r.machineId || ""}</td>
+            <td>${r.activatedAt || ""}</td>
+            <td>${r.lastSeenAt || ""}</td>
+          `;
+          body.appendChild(tr);
+        }
+        el("rowsCount").textContent = `${filtered.length} / ${rows?.length || 0} rows`;
+      }
+
+      async function loadActivations() {
+        if (!(await ensureServerOnline())) return;
+        const res = await window.adminApi.listKeys(token());
+        if (!res.ok || !res.rows) {
+          log(res.message || "Load keys failed. Check ADMIN_TOKEN.");
+          return;
+        }
+        renderRows(res.rows);
+        const freeCount = (res.rows || []).filter((x) => x.status === "free" && !x.expired).length;
+        const usedCount = (res.rows || []).filter((x) => x.status === "activated").length;
+        const expiredCount = (res.rows || []).filter((x) => x.expired).length;
+        log(`Loaded keys: total ${res.rows.length}, free ${freeCount}, activated ${usedCount}, expired ${expiredCount}.`);
+      }
+
+      async function createKeys() {
+        if (!(await ensureServerOnline())) return;
+        const payload = {
+          count: Number(el("createCount").value || 1),
+          tier: el("createTier").value,
+          daysValid: Number(el("createDays").value || 0),
+        };
+        const res = await window.adminApi.createKeys(token(), payload);
+        if (!res.ok) {
+          log(res.message || "Create keys failed.");
+          return;
+        }
+        const keys = (res.created || []).map((x) => x.key).join("\n");
+        log(`Created ${(res.created || []).length} keys:\n${keys}`);
+        await loadActivations();
+      }
+
+      async function resetKey() {
+        if (!(await ensureServerOnline())) return;
+        const key = el("resetKey").value.trim();
+        if (!key) return log("Enter key first.");
+        const res = await window.adminApi.resetKey(token(), key);
+        if (!res.ok) {
+          if (res.status === 403 && String(res.message || "") === "FORBIDDEN") {
+            log("Wrong ADMIN_TOKEN. Check token and retry.");
+            return;
+          }
+          if (String(res.message || "").includes("fetch failed")) {
+            log("Cannot reach license server. Check API URL, start server, then retry.");
+            return;
+          }
+          log(res.message || "Reset failed.");
+          return;
+        }
+        log(`Reset done for key: ${key}`);
+        await loadActivations();
+      }
+
+      el("btnSaveBase").addEventListener("click", () => void saveApiBase());
+      el("btnStartServer").addEventListener("click", () => void startLocalServer());
+      el("btnHealth").addEventListener("click", () => void refreshBaseAndHealth());
+      el("btnLoad").addEventListener("click", () => void loadActivations());
+      el("btnCreate").addEventListener("click", () => void createKeys());
+      el("btnReset").addEventListener("click", () => void resetKey());
+      el("statusFilter").addEventListener("change", () => void loadActivations());
+
+      void refreshBaseAndHealth();
+    </script>
+  </body>
+  </html>

@@ -1,0 +1,25 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+contextBridge.exposeInMainWorld("boostPc", {
+  getStats: () => ipcRenderer.invoke("boost:getStats"),
+  cleanTempFiles: () => ipcRenderer.invoke("boost:cleanTempFiles"),
+  flushDns: () => ipcRenderer.invoke("boost:flushDns"),
+  setPowerPlan: (mode) => ipcRenderer.invoke("boost:setPowerPlan", mode),
+  closeBackgroundApps: () => ipcRenderer.invoke("boost:closeBackgroundApps"),
+  runGameBoost: () => ipcRenderer.invoke("boost:runGameBoost"),
+  runStreamMode: () => ipcRenderer.invoke("boost:runStreamMode"),
+  runMaxFpsBoost: () => ipcRenderer.invoke("boost:runMaxFpsBoost"),
+  getSecurityStatus: () => ipcRenderer.invoke("security:getStatus"),
+  defenderQuickScan: () => ipcRenderer.invoke("security:defenderQuickScan"),
+  defenderFullScan: () => ipcRenderer.invoke("security:defenderFullScan"),
+  openVpnProvider: (providerId) => ipcRenderer.invoke("security:openVpnProvider", providerId),
+  getVpnRegionBenchmarks: () => ipcRenderer.invoke("security:vpnRegionBenchmarks"),
+  getVpnProfiles: () => ipcRenderer.invoke("security:vpnProfiles"),
+  connectVpnProfile: (profileName) => ipcRenderer.invoke("security:connectVpnProfile", profileName),
+  getLicenseStatus: () => ipcRenderer.invoke("license:getStatus"),
+  getMachineId: () => ipcRenderer.invoke("license:getMachineId"),
+  activateLicense: (key) => ipcRenderer.invoke("license:activate", key),
+  setLicenseApiBase: (url) => ipcRenderer.invoke("license:setApiBase", url),
+  openExternal: (url) => ipcRenderer.invoke("boost:openExternal", url),
+  openPath: (p) => ipcRenderer.invoke("boost:openPath", p),
+});
