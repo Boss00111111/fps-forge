@@ -1,109 +1,185 @@
 /**
  * License API for FPS Forge (1 key = 1 PC).
  *
- * Admin:
- * - set ADMIN_TOKEN env
- * - use x-admin-token header
- * Endpoints:
- * - POST /activate { key, machineId }
- * - POST /verify { key, machineId }
- * - GET  /admin/activations
- * - POST /admin/reset { key }
- * - POST /admin/create { count, tier, daysValid }
+ * Storage (pick one):
+ * - FREE on Render Web: set DATABASE_URL to Postgres (Neon / Supabase free tier) → persistent keys.
+ * - Paid Render Disk: SQLite under DATA_DIR on mounted volume.
+ * - Dev: SQLite under ./data
+ *
+ * Admin: ADMIN_TOKEN + header x-admin-token
  */
 import express from "express";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
+import os from "os";
 import { fileURLToPath } from "url";
+import { openStore, normalizeKey, normalizeTier } from "./store.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3847);
 const ADMIN_TOKEN = String(process.env.ADMIN_TOKEN || "").trim();
-/** Optional persistent volume (e.g. Render disk mounted at /data). If unset, uses server folder + ./data */
-const DATA_DIR = String(process.env.DATA_DIR || "").trim();
-const keysPath = DATA_DIR ? path.join(DATA_DIR, "keys.json") : path.join(__dirname, "keys.json");
-const dataDir = DATA_DIR ? DATA_DIR : path.join(__dirname, "data");
-const dbPath = path.join(dataDir, "activations.json");
+const onRender = String(process.env.RENDER || "").toLowerCase() === "true";
+
+/** Await sync or async store method */
+function run(p) {
+  return Promise.resolve(p);
+}
+
+function looksLikeRemoteDbUrl(s) {
+  const t = String(s || "").trim().toLowerCase();
+  return (
+    t.startsWith("postgres://") ||
+    t.startsWith("postgresql://") ||
+    t.startsWith("mysql://") ||
+    t.startsWith("mongodb://") ||
+    t.startsWith("mongodb+srv://") ||
+    t.startsWith("redis://")
+  );
+}
+
+function pickPostgresUrl() {
+  for (const env of [process.env.DATABASE_URL, process.env.POSTGRES_URL]) {
+    const u = String(env || "").trim();
+    if (!u) continue;
+    const low = u.toLowerCase();
+    if (low.startsWith("postgres://") || low.startsWith("postgresql://")) return u;
+  }
+  return "";
+}
+
+/**
+ * DATA_DIR for SQLite only. If DATABASE_URL is a plain path (mis-name), use as dir.
+ */
+function pickFilesystemDataDirFromEnv() {
+  const fromData = String(process.env.DATA_DIR || "").trim();
+  const fromDbUrl = String(process.env.DATABASE_URL || "").trim();
+  if (fromData) return { raw: fromData, source: "DATA_DIR" };
+  if (fromDbUrl && !looksLikeRemoteDbUrl(fromDbUrl)) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[fpsforge-license] Using DATABASE_URL as a filesystem path. Prefer DATA_DIR, and use DATABASE_URL only for Postgres (Neon/Supabase)."
+    );
+    return { raw: fromDbUrl, source: "DATABASE_URL" };
+  }
+  return { raw: "", source: null };
+}
+
+function normalizeDataDirPath(raw) {
+  const warnings = [];
+  let s = String(raw || "").trim();
+  if (!s) return { path: s, warnings };
+  if (/\s/.test(s) && s.startsWith("/")) {
+    const before = s;
+    s = s.replace(/\s+/g, "-");
+    warnings.push(
+      `DATA_DIR had spaces (${before}). Using ${s} — mount path must match exactly (no spaces).`
+    );
+    // eslint-disable-next-line no-console
+    console.warn("[fpsforge-license]", warnings[0]);
+  }
+  return { path: s, warnings };
+}
+
 const publicDir = path.join(__dirname, "public");
 
-function ensureDataLayout() {
+/** @type {any} */
+let store;
+/** @type {"postgres"|"sqlite"} */
+let storageKind = "sqlite";
+let dataDir = "";
+let dataDirWritable = false;
+/** @type {string[]} */
+let pathWarnings = [];
+/** @type {string} */
+let resolvedSource = "local_default";
+/** @type {string | null} */
+let sqlitePathLabel = null;
+
+async function bootstrap() {
+  const postgresUrl = pickPostgresUrl();
+  if (postgresUrl) {
+    storageKind = "postgres";
+    dataDirWritable = true;
+    dataDir = "(postgres)";
+    resolvedSource = "DATABASE_URL";
+    pathWarnings = [];
+    const { openPgStore } = await import("./store-pg.mjs");
+    const legacyKeysPath = path.join(__dirname, "keys.json");
+    const legacyActivationsPath = path.join(__dirname, "data", "activations.json");
+    store = await openPgStore({
+      connectionString: postgresUrl,
+      legacyKeysPath,
+      legacyActivationsPath,
+    });
+    sqlitePathLabel = null;
+    const counts = await run(store.healthCounts());
+    // eslint-disable-next-line no-console
+    console.log(
+      `[fpsforge-license] PostgreSQL backend ${store.postgresHost || ""} keys=${counts.keys} activations=${counts.activations}`
+    );
+    return;
+  }
+
+  storageKind = "sqlite";
+  const picked = pickFilesystemDataDirFromEnv();
+  let rawDataDir = picked.raw;
+  const dataDirSource = picked.source;
+
+  const normalized = normalizeDataDirPath(rawDataDir);
+  rawDataDir = normalized.path;
+  pathWarnings = [...normalized.warnings];
+
+  if (onRender && (rawDataDir === "/data" || rawDataDir === "/data/" || rawDataDir.startsWith("/data/"))) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[fpsforge-license] DATA_DIR=/data not writable without Disk. Falling back to /tmp/fpsforge-license."
+    );
+    rawDataDir = "";
+    pathWarnings = pathWarnings.filter((w) => !w.includes("had spaces"));
+  }
+
+  const DATA_DIR_ENV = rawDataDir;
+
+  let legacyKeysPath;
+  let legacyActivationsPath;
+
+  if (DATA_DIR_ENV) {
+    dataDir = DATA_DIR_ENV;
+    legacyKeysPath = path.join(dataDir, "keys.json");
+    legacyActivationsPath = path.join(dataDir, "activations.json");
+    resolvedSource = dataDirSource === "DATABASE_URL" ? "DATABASE_URL" : "DATA_DIR";
+  } else if (onRender) {
+    dataDir = path.join(os.tmpdir(), "fpsforge-license");
+    legacyKeysPath = path.join(dataDir, "keys.json");
+    legacyActivationsPath = path.join(dataDir, "activations.json");
+    resolvedSource = "render_tmp";
+  } else {
+    dataDir = path.join(__dirname, "data");
+    legacyKeysPath = path.join(__dirname, "keys.json");
+    legacyActivationsPath = path.join(dataDir, "activations.json");
+    resolvedSource = "local_default";
+  }
+
   fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(keysPath)) {
-    fs.writeFileSync(keysPath, "[]", "utf8");
-  }
-}
-ensureDataLayout();
-
-function normalizeKey(key) {
-  return String(key || "").trim().toUpperCase().replace(/\s+/g, "");
-}
-
-function normalizeTier(tier) {
-  const t = String(tier || "premium_monthly").toLowerCase();
-  if (t === "free" || t === "premium_monthly" || t === "premium_lifetime") return t;
-  return "premium_monthly";
-}
-
-function parseIsoOrNull(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
-
-function keyRowFromInput(item) {
-  if (typeof item === "string") {
-    return { key: normalizeKey(item), tier: "premium_monthly", expiresAt: null };
-  }
-  if (item && typeof item === "object") {
-    return {
-      key: normalizeKey(item.key),
-      tier: normalizeTier(item.tier),
-      expiresAt: parseIsoOrNull(item.expiresAt),
-    };
-  }
-  return { key: "", tier: "premium_monthly", expiresAt: null };
-}
-
-function readKeyCatalog() {
-  const raw = fs.readFileSync(keysPath, "utf8");
-  const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed)) throw new Error("keys.json must be array");
-  const map = new Map();
-  for (const item of parsed) {
-    const row = keyRowFromInput(item);
-    if (!row.key) continue;
-    map.set(row.key, row);
-  }
-  return map;
-}
-
-function readDb() {
+  const probe = path.join(dataDir, ".fpsforge-write-probe");
   try {
-    const raw = fs.readFileSync(dbPath, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return { activations: {} };
-    return { activations: parsed.activations || {} };
-  } catch {
-    return { activations: {} };
+    fs.writeFileSync(probe, "ok", "utf8");
+    fs.unlinkSync(probe);
+    dataDirWritable = true;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[fpsforge-license] DATA_DIR not writable:", e?.message || e);
+    dataDirWritable = false;
   }
-}
 
-function writeDb(db) {
-  fs.mkdirSync(dataDir, { recursive: true });
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8");
-}
-
-function makeKey() {
-  const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-  const seg = () => Array.from({ length: 4 }, () => chars[crypto.randomInt(chars.length)]).join("");
-  return `FFG-${seg()}-${seg()}-${seg()}-${seg()}`;
-}
-
-function isExpired(expiresAt) {
-  if (!expiresAt) return false;
-  return new Date(expiresAt).getTime() < Date.now();
+  store = openStore({ dataDir, legacyKeysPath, legacyActivationsPath });
+  sqlitePathLabel = path.basename(store.sqlitePath);
+  const counts = await run(store.healthCounts());
+  // eslint-disable-next-line no-console
+  console.log(
+    `fpsforge-license dataDir=${dataDir} sqlite=${store.sqlitePath} keys=${counts.keys} activations=${counts.activations} writable=${dataDirWritable} source=${resolvedSource}`
+  );
 }
 
 function requireAdmin(req, res) {
@@ -119,8 +195,14 @@ function requireAdmin(req, res) {
   return true;
 }
 
-let catalog = readKeyCatalog();
-let db = readDb();
+await bootstrap();
+
+if (onRender && storageKind === "sqlite") {
+  // eslint-disable-next-line no-console
+  console.error(
+    "[fpsforge-license] CRITICAL (Render): DATABASE_URL is not a Postgres URL — using SQLite on ephemeral disk. License keys are LOST on every deploy/restart. Fix: add Neon/Supabase connection string as DATABASE_URL, redeploy, then /health must show storage: postgres."
+  );
+}
 
 const app = express();
 app.use(cors());
@@ -135,117 +217,133 @@ app.get("/", (_req, res) => {
   res.redirect(302, "/health");
 });
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, keys: catalog.size, activations: Object.keys(db.activations || {}).length });
-});
-
-app.post("/activate", (req, res) => {
-  const key = normalizeKey(req.body?.key);
-  const machineId = String(req.body?.machineId || "").trim();
-  if (!key || !machineId) return res.status(400).json({ ok: false, message: "MISSING_FIELDS" });
-
-  const row = catalog.get(key);
-  if (!row) return res.status(400).json({ ok: false, message: "INVALID_KEY" });
-  if (isExpired(row.expiresAt)) return res.status(403).json({ ok: false, message: "KEY_EXPIRED" });
-
-  const existing = db.activations[key];
-  if (existing && existing.machineId !== machineId) {
-    return res.status(403).json({ ok: false, message: "KEY_ALREADY_USED" });
+app.get("/health", async (_req, res) => {
+  const { keys, activations } = await run(store.healthCounts());
+  const warnings = [...pathWarnings];
+  if (storageKind === "sqlite") {
+    const ephemeral =
+      onRender &&
+      (dataDir.includes(`${path.sep}tmp`) || dataDir.startsWith("/tmp") || dataDir.includes("Temp"));
+    if (ephemeral) {
+      warnings.push(
+        "SQLite on /tmp is LOST on every deploy. Free fix: create a Neon or Supabase Postgres DB, paste connection string as DATABASE_URL on this service. Paid fix: Render Disk + DATA_DIR."
+      );
+    }
+    if (!dataDirWritable) {
+      warnings.push(
+        "DATA_DIR not writable (Disk path wrong or missing paid Disk). Use Postgres DATABASE_URL on free tier instead."
+      );
+    }
   }
-
-  db.activations[key] = {
-    machineId,
-    tier: row.tier,
-    expiresAt: row.expiresAt,
-    activatedAt: existing?.activatedAt || new Date().toISOString(),
-    lastSeenAt: new Date().toISOString(),
-  };
-  writeDb(db);
-  return res.json({ ok: true, tier: row.tier, expiresAt: row.expiresAt });
+  res.json({
+    ok: true,
+    storageReady: storageKind === "postgres" ? true : dataDirWritable,
+    keys,
+    activations,
+    dataDir,
+    dataDirSource: resolvedSource,
+    dataDirWritable: storageKind === "postgres" ? true : dataDirWritable,
+    storage: storageKind,
+    sqlite: sqlitePathLabel,
+    ...(storageKind === "postgres" && store.postgresHost ? { postgres: store.postgresHost } : {}),
+    ...(warnings.length ? { warnings } : {}),
+  });
 });
 
-app.post("/verify", (req, res) => {
+app.post("/activate", async (req, res) => {
   const key = normalizeKey(req.body?.key);
   const machineId = String(req.body?.machineId || "").trim();
   if (!key || !machineId) return res.status(400).json({ ok: false, message: "MISSING_FIELDS" });
 
-  const row = catalog.get(key);
-  if (!row) return res.status(400).json({ ok: false, message: "INVALID_KEY" });
-  if (isExpired(row.expiresAt)) return res.status(403).json({ ok: false, message: "KEY_EXPIRED" });
-
-  const existing = db.activations[key];
-  if (!existing) return res.status(403).json({ ok: false, message: "NOT_ACTIVATED" });
-  if (existing.machineId !== machineId) return res.status(403).json({ ok: false, message: "WRONG_PC" });
-
-  existing.lastSeenAt = new Date().toISOString();
-  existing.tier = row.tier;
-  existing.expiresAt = row.expiresAt;
-  db.activations[key] = existing;
-  writeDb(db);
-  return res.json({ ok: true, tier: row.tier, expiresAt: row.expiresAt });
-});
-
-app.get("/admin/activations", (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const rows = Object.entries(db.activations || {}).map(([key, info]) => ({
-    key,
-    machineId: info.machineId,
-    tier: info.tier,
-    expiresAt: info.expiresAt || null,
-    activatedAt: info.activatedAt,
-    lastSeenAt: info.lastSeenAt,
-  }));
-  res.json({ ok: true, rows });
-});
-
-app.get("/admin/keys", (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const rows = Array.from(catalog.values()).map((row) => {
-    const activation = db.activations?.[row.key] || null;
-    const expired = isExpired(row.expiresAt);
-    return {
-      key: row.key,
-      tier: row.tier,
-      expiresAt: row.expiresAt || null,
-      expired,
-      status: activation ? "activated" : "free",
-      machineId: activation?.machineId || null,
-      activatedAt: activation?.activatedAt || null,
-      lastSeenAt: activation?.lastSeenAt || null,
+  const r = await run(store.activate(key, machineId));
+  if (!r.ok) {
+    const map = {
+      INVALID_KEY: 400,
+      KEY_EXPIRED: 403,
+      KEY_ALREADY_USED: 403,
     };
-  });
-  res.json({ ok: true, rows });
+    const status = map[r.code] || 400;
+    return res.status(status).json({ ok: false, message: r.code });
+  }
+  return res.json({ ok: true, tier: r.tier, expiresAt: r.expiresAt });
 });
 
-app.post("/admin/reset", (req, res) => {
+app.post("/verify", async (req, res) => {
+  const key = normalizeKey(req.body?.key);
+  const machineId = String(req.body?.machineId || "").trim();
+  if (!key || !machineId) return res.status(400).json({ ok: false, message: "MISSING_FIELDS" });
+
+  const r = await run(store.verify(key, machineId));
+  if (!r.ok) {
+    const map = {
+      INVALID_KEY: 400,
+      KEY_EXPIRED: 403,
+      NOT_ACTIVATED: 403,
+      WRONG_PC: 403,
+    };
+    const status = map[r.code] || 400;
+    return res.status(status).json({ ok: false, message: r.code });
+  }
+  return res.json({ ok: true, tier: r.tier, expiresAt: r.expiresAt });
+});
+
+app.get("/admin/activations", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ ok: true, rows: await run(store.adminListActivations()) });
+});
+
+app.get("/admin/keys", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ ok: true, rows: await run(store.adminListKeys()) });
+});
+
+/** Plain-text export: one license key per line (UTF-8). Same auth as other admin routes. */
+app.get("/admin/keys-export", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const rows = await run(store.adminListKeys());
+  const text = (rows || [])
+    .map((r) => String(r?.key || "").trim())
+    .filter(Boolean)
+    .join("\n");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="fps-forge-keys.txt"');
+  res.send(text);
+});
+
+app.post("/admin/reset", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const key = normalizeKey(req.body?.key);
   if (!key) return res.status(400).json({ ok: false, message: "MISSING_KEY" });
-  delete db.activations[key];
-  writeDb(db);
+  await run(store.adminReset(key));
   res.json({ ok: true });
 });
 
-app.post("/admin/create", (req, res) => {
+app.post("/admin/create", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const count = Math.min(500, Math.max(1, Number(req.body?.count || 1)));
   const tier = normalizeTier(req.body?.tier || "premium_monthly");
   const daysValid = Number(req.body?.daysValid || 0);
-  const expiresAt = daysValid > 0 ? new Date(Date.now() + daysValid * 24 * 60 * 60 * 1000).toISOString() : null;
-  const created = [];
-  const raw = fs.existsSync(keysPath) ? JSON.parse(fs.readFileSync(keysPath, "utf8")) : [];
-  const list = Array.isArray(raw) ? raw : [];
+  const r = await run(store.adminCreate(count, tier, daysValid));
+  res.json(r);
+});
 
-  for (let i = 0; i < count; i++) {
-    let k = makeKey();
-    while (catalog.has(k)) k = makeKey();
-    const row = { key: k, tier, expiresAt };
-    list.push(row);
-    catalog.set(k, row);
-    created.push(row);
-  }
-  fs.writeFileSync(keysPath, JSON.stringify(list, null, 2), "utf8");
-  res.json({ ok: true, created });
+app.post("/admin/mark-sold", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const key = normalizeKey(req.body?.key);
+  const saleRef = String(req.body?.saleRef || req.body?.orderRef || "").trim();
+  if (!key) return res.status(400).json({ ok: false, message: "MISSING_KEY" });
+  const r = await run(store.adminMarkSold(key, saleRef));
+  if (!r.ok) return res.status(400).json(r);
+  res.json({ ok: true });
+});
+
+app.post("/admin/unmark-sold", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const key = normalizeKey(req.body?.key);
+  if (!key) return res.status(400).json({ ok: false, message: "MISSING_KEY" });
+  const r = await run(store.adminUnmarkSold(key));
+  if (!r.ok) return res.status(400).json(r);
+  res.json({ ok: true });
 });
 
 app.listen(PORT, "0.0.0.0", () => {

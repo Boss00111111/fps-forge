@@ -12,5 +12,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20.18.0"
+      # REQUIRED for real persistence on Render Free (SQLite on /tmp is wiped on deploy). Paste Neon "connection string" — one line, no spaces.
+      - key: DATABASE_URL
+        sync: false
       - key: ADMIN_TOKEN
         sync: false

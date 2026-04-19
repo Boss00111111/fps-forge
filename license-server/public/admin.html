@@ -6,31 +6,53 @@
     <title>FPS Forge License Admin</title>
     <style>
       body { font-family: Segoe UI, sans-serif; margin: 24px; background:#0e1727; color:#dbe8ff; }
-      .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+      .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
       input, select, button { padding:8px 10px; border-radius:6px; border:1px solid #35507b; background:#13233d; color:#dbe8ff; }
       button { cursor:pointer; background:#2f6ded; border-color:#4a7ff0; }
+      button.secondary { background:#3d4f6a; border-color:#5a6d8a; }
+      button.warn { background:#8b3a2a; border-color:#c45c48; }
       table { width:100%; border-collapse: collapse; margin-top:14px; }
-      th, td { border:1px solid #29466d; padding:8px; text-align:left; font-size:13px; }
-      th { background:#10233d; }
+      th, td { border:1px solid #29466d; padding:8px; text-align:left; font-size:12px; vertical-align:top; }
+      th { background:#10233d; position:sticky; top:0; }
       .muted { color:#9db7dc; font-size:13px; }
       .warn { color:#ffb4a8; }
+      .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+      .p-pool { background:#1a4d2e; color:#9fe8b8; }
+      .p-sold { background:#4a3a1a; color:#ffd79a; }
+      .p-act { background:#1a3a5c; color:#9fd0ff; }
+      h3 { margin-top:22px; font-size:15px; }
     </style>
   </head>
   <body>
     <h2>FPS Forge License Admin</h2>
-    <p class="muted">Use your ADMIN_TOKEN. You can list activations, reset keys, and create new keys.</p>
+    <p class="warn" style="border:1px solid #8b3a2a;padding:12px;border-radius:8px;margin-bottom:14px;line-height:1.45">
+      <b>Da radi trajno (Render Free):</b> u Render → Environment mora postojati <code>DATABASE_URL</code> = Neon <code>postgres://…</code> (jedna linija). Posle deploya otvori <code>/health</code> — mora <code>storage: postgres</code>. Ako vidiš <code>storage: sqlite</code> i upozorenje o <code>/tmp</code>, ključevi će nestati posle redeploya.<br/>
+      <b>„Activations only“</b> = samo PC koji su aktivirali app. <b>List all keys</b> + <b>Download key.txt</b> = sav inventar ključeva.
+    </p>
+    <p class="muted">
+      <b>Render Free:</b> you cannot attach a Disk. Use a <b>free Postgres</b> (e.g. <a href="https://neon.tech" target="_blank" rel="noopener">Neon</a> or <a href="https://supabase.com" target="_blank" rel="noopener">Supabase</a>),
+      copy the <code>postgres://…</code> connection string into Render env <code>DATABASE_URL</code>, Save → deploy. Then <code>/health</code> shows <code>storage: postgres</code> and keys survive forever.<br/>
+      <b>SQLite</b> (only if you have a paid Render Disk): file <code>fpsforge-license.sqlite</code> under <code>DATA_DIR</code> = exact mount path, no spaces.<br/>
+      Open <code>/health</code>: <code>storageReady:true</code> and read <code>warnings</code> if something is wrong.
+    </p>
+    <p class="muted">
+      <b>in pool</b> = created, not sold-marked, not activated → safe to list for sale.<br/>
+      <b>sold (waiting)</b> = you marked sold (Gumroad ref), buyer has not activated yet.<br/>
+      <b>activated</b> = redeemed on a PC (machine id shown).
+    </p>
 
     <div class="row">
-      <input id="base" placeholder="API base e.g. https://your-domain" style="min-width:320px" />
+      <input id="base" placeholder="API base e.g. https://fpsforge-license.onrender.com" style="min-width:320px" />
       <input id="token" placeholder="ADMIN_TOKEN" style="min-width:220px" />
-      <button onclick="loadRows()">Load activations</button>
+      <button onclick="loadHealth()">Check /health</button>
+      <button onclick="loadKeys()" style="background:#1a5c3a;border-color:#2a8f5a">List all keys</button>
+      <button onclick="downloadKeyTxt()" class="secondary">Download key.txt</button>
+      <button onclick="loadRows()" class="secondary">Activations only</button>
     </div>
 
-    <div class="row">
-      <input id="resetKey" placeholder="Key to reset" style="min-width:280px" />
-      <button onclick="resetKey()">Reset key</button>
-    </div>
+    <p id="health" class="muted"></p>
 
+    <h3>Create keys</h3>
     <div class="row">
       <input id="createCount" type="number" value="10" min="1" max="500" />
       <select id="createTier">
@@ -38,21 +60,39 @@
         <option value="premium_lifetime">premium_lifetime</option>
         <option value="free">free</option>
       </select>
-      <input id="daysValid" type="number" value="30" min="0" />
+      <input id="daysValid" type="number" value="30" min="0" title="0 = key does not expire by date" />
       <button onclick="createKeys()">Create keys</button>
+    </div>
+
+    <h3>Mark sold / undo (before activation)</h3>
+    <div class="row">
+      <input id="soldKey" placeholder="FFG-.... full key" style="min-width:280px" />
+      <input id="soldRef" placeholder="Gumroad order / email / note" style="min-width:220px" />
+      <button onclick="markSold()">Mark as sold</button>
+      <button onclick="unmarkSold()" class="warn">Unmark sold</button>
+    </div>
+
+    <h3>Reset activation (same key can go to another PC)</h3>
+    <div class="row">
+      <input id="resetKey" placeholder="Key to reset" style="min-width:280px" />
+      <button onclick="resetKey()" class="warn">Reset activation</button>
     </div>
 
     <p id="msg" class="muted"></p>
     <div id="created" class="muted"></div>
+
     <table>
       <thead>
         <tr>
+          <th>Status</th>
           <th>Key</th>
-          <th>Machine ID</th>
           <th>Tier</th>
-          <th>Expires</th>
+          <th>Key expires</th>
+          <th>Sale ref</th>
+          <th>Sold marked</th>
+          <th>Machine ID</th>
           <th>Activated</th>
-          <th>Last Seen</th>
+          <th>Last seen</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -77,7 +117,62 @@
           ...options,
           headers: { "Content-Type": "application/json", "x-admin-token": token, ...(options.headers || {}) },
         });
-        return res.json();
+        const text = await res.text();
+        try {
+          return text ? JSON.parse(text) : {};
+        } catch {
+          return { ok: false, message: text.slice(0, 400) || "INVALID_JSON" };
+        }
+      }
+
+      async function downloadKeyTxt() {
+        try {
+          const base = getBase();
+          const token = getToken();
+          if (!base) return setMsg("Enter API base URL first.", true);
+          if (!token) return setMsg("Enter ADMIN_TOKEN first.", true);
+          const res = await fetch(base + "/admin/keys-export", { headers: { "x-admin-token": token } });
+          if (!res.ok) {
+            const t = await res.text();
+            let msg = t;
+            try {
+              const j = JSON.parse(t);
+              if (j.message) msg = j.message;
+            } catch {
+              /* plain text error */
+            }
+            return setMsg("Download failed: " + msg, true);
+          }
+          const blob = await res.blob();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "fps-forge-keys.txt";
+          a.click();
+          URL.revokeObjectURL(a.href);
+          setMsg("Downloaded fps-forge-keys.txt (one key per line).");
+        } catch (e) {
+          setMsg(String(e), true);
+        }
+      }
+
+      async function loadHealth() {
+        try {
+          const base = getBase();
+          const res = await fetch(base + "/health");
+          const data = await res.json();
+          document.getElementById("health").textContent = JSON.stringify(data, null, 2);
+          if (data.storageReady === false) {
+            setMsg("health.storageReady is false — fix DATA_DIR + Render Disk (see warnings in JSON above).", true);
+          }
+        } catch (e) {
+          document.getElementById("health").textContent = String(e);
+        }
+      }
+
+      function pillFor(ui) {
+        if (ui === "activated") return '<span class="pill p-act">activated</span>';
+        if (ui === "sold_unredeemed") return '<span class="pill p-sold">sold (waiting)</span>';
+        return '<span class="pill p-pool">in pool</span>';
       }
 
       async function loadRows() {
@@ -88,10 +183,25 @@
           tbody.innerHTML = "";
           for (const r of data.rows || []) {
             const tr = document.createElement("tr");
-            tr.innerHTML = `<td>${r.key}</td><td>${r.machineId}</td><td>${r.tier || ""}</td><td>${r.expiresAt || ""}</td><td>${r.activatedAt || ""}</td><td>${r.lastSeenAt || ""}</td>`;
+            tr.innerHTML = `<td>${pillFor("activated")}</td><td>${r.key}</td><td>${r.tier || ""}</td><td>${r.expiresAt || "—"}</td><td>—</td><td>—</td><td style="word-break:break-all">${r.machineId}</td><td>${r.activatedAt || ""}</td><td>${r.lastSeenAt || ""}</td>`;
             tbody.appendChild(tr);
           }
-          setMsg(`Loaded ${data.rows?.length || 0} activation(s).`);
+          setMsg(`Loaded ${data.rows?.length || 0} activation row(s).`);
+        } catch (e) { setMsg(String(e), true); }
+      }
+
+      async function loadKeys() {
+        try {
+          const data = await api("/admin/keys");
+          if (!data.ok) return setMsg(data.message || "Failed loading keys", true);
+          const tbody = document.getElementById("rows");
+          tbody.innerHTML = "";
+          for (const r of data.rows || []) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${pillFor(r.uiStatus)}</td><td>${r.key}</td><td>${r.tier || ""}</td><td>${r.expiresAt || "—"}</td><td>${r.saleRef || "—"}</td><td>${r.soldMarkedAt || "—"}</td><td style="word-break:break-all">${r.machineId || "—"}</td><td>${r.activatedAt || "—"}</td><td>${r.lastSeenAt || "—"}</td>`;
+            tbody.appendChild(tr);
+          }
+          setMsg(`Catalog: ${data.rows?.length || 0} key(s). Use “Mark as sold” when you send a key to a buyer.`);
         } catch (e) { setMsg(String(e), true); }
       }
 
@@ -100,8 +210,27 @@
         if (!key) return;
         const data = await api("/admin/reset", { method: "POST", body: JSON.stringify({ key }) });
         if (!data.ok) return setMsg(data.message || "Reset failed", true);
-        setMsg("Key reset done.");
-        loadRows();
+        setMsg("Activation cleared for that key.");
+        loadKeys();
+      }
+
+      async function markSold() {
+        const key = document.getElementById("soldKey").value.trim();
+        const saleRef = document.getElementById("soldRef").value.trim();
+        if (!key) return;
+        const data = await api("/admin/mark-sold", { method: "POST", body: JSON.stringify({ key, saleRef }) });
+        if (!data.ok) return setMsg(data.message || "Mark sold failed", true);
+        setMsg("Marked as sold.");
+        loadKeys();
+      }
+
+      async function unmarkSold() {
+        const key = document.getElementById("soldKey").value.trim();
+        if (!key) return;
+        const data = await api("/admin/unmark-sold", { method: "POST", body: JSON.stringify({ key }) });
+        if (!data.ok) return setMsg(data.message || "Unmark failed", true);
+        setMsg("Returned to pool (not sold).");
+        loadKeys();
       }
 
       async function createKeys() {
@@ -113,7 +242,8 @@
         const created = (data.created || []).map((x) => x.key).join("<br/>");
         document.getElementById("created").innerHTML = created ? `<b>Created keys:</b><br/>${created}` : "";
         setMsg(`Created ${data.created?.length || 0} key(s).`);
+        loadKeys();
       }
     </script>
   </body>
-  </html>
+</html>

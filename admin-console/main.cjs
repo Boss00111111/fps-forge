@@ -1,7 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 
 function getApiConfigPath() {
   return path.join(app.getPath("userData"), "admin-api.json");
@@ -95,6 +95,15 @@ async function getAdmin(pathname, token) {
   return { ok: res.ok, status: res.status, ...json };
 }
 
+async function getAdminRawText(pathname, token) {
+  const res = await fetch(`${resolveApiBase()}${pathname}`, {
+    method: "GET",
+    headers: { "x-admin-token": String(token || "") },
+  });
+  const text = await res.text();
+  return { ok: res.ok, status: res.status, text };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1080,
@@ -185,6 +194,32 @@ ipcMain.handle("admin:resetKey", async (_e, token, key) => {
 ipcMain.handle("admin:createKeys", async (_e, token, payload) => {
   try {
     return await postAdmin("/admin/create", token, payload || {});
+  } catch (e) {
+    return { ok: false, message: `REQUEST_FAILED: ${e?.message || e}` };
+  }
+});
+
+ipcMain.handle("admin:exportKeysTxt", async (_e, token) => {
+  try {
+    const result = await getAdminRawText("/admin/keys-export", token);
+    if (!result.ok) {
+      let msg = result.text || "";
+      try {
+        const j = JSON.parse(result.text || "{}");
+        if (j.message) msg = j.message;
+      } catch {
+        /* keep msg as body */
+      }
+      return { ok: false, message: msg || `HTTP ${result.status}` };
+    }
+    const { filePath, canceled } = await dialog.showSaveDialog({
+      title: "Save keys as text",
+      defaultPath: "fps-forge-keys.txt",
+      filters: [{ name: "Text", extensions: ["txt"] }],
+    });
+    if (canceled || !filePath) return { ok: false, message: "CANCELLED" };
+    fs.writeFileSync(filePath, result.text, "utf8");
+    return { ok: true, filePath };
   } catch (e) {
     return { ok: false, message: `REQUEST_FAILED: ${e?.message || e}` };
   }

@@ -2,16 +2,14 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { app } = require("electron");
-const { execFile } = require("child_process");
-const { promisify } = require("util");
-
-const execFileAsync = promisify(execFile);
 const licenseConfig = require("./license-config.cjs");
 
 const VERIFY_GRACE_MS = 72 * 60 * 60 * 1000;
 
 let cachedApiBase = null;
 let cachedLicenseState = null;
+/** @type {string | undefined} undefined = not computed yet */
+let machineIdMemo = undefined;
 
 function clearLicenseCaches() {
   cachedApiBase = null;
@@ -46,18 +44,30 @@ async function resolveApiBase() {
     cachedApiBase = envBase;
     return cachedApiBase;
   }
+
+  const bundled = String(licenseConfig.packagedApiBase || "").trim().replace(/\/$/, "");
   const { apiOverridePath } = getLicensePaths();
   const override = await readJsonSafe(apiOverridePath, {});
   const fromFile = String(override.apiBase || "").trim().replace(/\/$/, "");
-  if (fromFile) {
+  const fileUrlIsLocal =
+    fromFile.startsWith("http://127.0.0.1") || fromFile.startsWith("http://localhost");
+
+  // Saved localhost from dev testing must not shadow a production HTTPS URL baked into the exe.
+  if (fromFile && !(app.isPackaged && bundled.startsWith("https://") && fileUrlIsLocal)) {
     cachedApiBase = fromFile;
     return cachedApiBase;
   }
-  const bundled = String(licenseConfig.packagedApiBase || "").trim().replace(/\/$/, "");
+
   if (bundled) {
     cachedApiBase = bundled;
     return cachedApiBase;
   }
+
+  if (fromFile) {
+    cachedApiBase = fromFile;
+    return cachedApiBase;
+  }
+
   cachedApiBase = "http://127.0.0.1:3847";
   return cachedApiBase;
 }
@@ -75,28 +85,26 @@ function normalizeTier(tier) {
   return "free";
 }
 
+/** Stable PC fingerprint without PowerShell/WMI (WMI often hangs → endless "Activating…"). */
+function machineFingerprintRaw() {
+  const os = require("os");
+  const u = os.userInfo();
+  return [
+    os.hostname(),
+    String(u?.username || ""),
+    String(u?.uid ?? ""),
+    os.platform(),
+    os.arch(),
+    app.getPath("userData"),
+  ].join("|");
+}
+
 async function getMachineId() {
-  if (process.platform !== "win32") {
-    return crypto.createHash("sha256").update(osInfoFallback()).digest("hex").slice(0, 32);
+  if (machineIdMemo !== undefined) {
+    return machineIdMemo;
   }
-  const script = `
-    $uuid = (Get-CimInstance Win32_ComputerSystemProduct -ErrorAction SilentlyContinue).UUID
-    $cpu = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1).ProcessorId
-    $raw = "$uuid|$cpu"
-    $raw
-  `;
-  try {
-    const out = await execFileAsync(
-      "powershell",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-      { windowsHide: true }
-    );
-    const raw = String(out.stdout || "").trim();
-    if (!raw) throw new Error("empty machine fingerprint");
-    return crypto.createHash("sha256").update(raw).digest("hex");
-  } catch {
-    return crypto.createHash("sha256").update(osInfoFallback()).digest("hex");
-  }
+  machineIdMemo = crypto.createHash("sha256").update(machineFingerprintRaw()).digest("hex");
+  return machineIdMemo;
 }
 
 function osInfoFallback() {
@@ -114,12 +122,18 @@ async function saveLocalLicense(payload) {
   await writeJsonSafe(licensePath, payload);
 }
 
-async function postJson(url, body) {
+/** Render free cold start often needs 30–90s; override with FPSFORGE_LICENSE_FETCH_MS */
+const LICENSE_FETCH_TIMEOUT_MS = Number(process.env.FPSFORGE_LICENSE_FETCH_MS || 60000);
+
+async function postJsonOnce(url, body) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), LICENSE_FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: ac.signal,
     });
     const text = await res.text();
     let json = null;
@@ -130,16 +144,81 @@ async function postJson(url, body) {
     }
     return { ok: res.ok, status: res.status, json };
   } catch (e) {
+    const aborted = e?.name === "AbortError" || ac.signal.aborted;
     return {
       ok: false,
       status: 0,
       json: {
         ok: false,
-        message: "LICENSE_SERVER_OFFLINE",
+        message: aborted ? "LICENSE_ACTIVATION_TIMEOUT" : "LICENSE_SERVER_OFFLINE",
         detail: e?.message || String(e),
       },
     };
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function postJson(url, body) {
+  const first = await postJsonOnce(url, body);
+  if (first.ok) return first;
+  const msg = String(first.json?.message || "");
+  const transient =
+    msg === "LICENSE_ACTIVATION_TIMEOUT" ||
+    msg === "LICENSE_SERVER_OFFLINE" ||
+    first.status === 0 ||
+    first.status === 502 ||
+    first.status === 503 ||
+    first.status === 504;
+  if (!transient) return first;
+  await new Promise((r) => setTimeout(r, 6000));
+  return postJsonOnce(url, body);
+}
+
+/** GET /health — wakes free-tier Render before POST /activate. */
+async function getHealthOnce(base) {
+  const root = String(base || "").trim().replace(/\/$/, "");
+  if (!root) return { ok: false, status: 0, json: {} };
+  const url = `${root}/health`;
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), LICENSE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      signal: ac.signal,
+      headers: { Accept: "application/json" },
+    });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = { ok: res.ok };
+    }
+    return { ok: res.ok, status: res.status, json };
+  } catch (e) {
+    const aborted = e?.name === "AbortError" || ac.signal.aborted;
+    return {
+      ok: false,
+      status: 0,
+      json: {
+        ok: false,
+        message: aborted ? "LICENSE_ACTIVATION_TIMEOUT" : "LICENSE_SERVER_OFFLINE",
+      },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function wakeLicenseServer(base) {
+  const first = await getHealthOnce(base);
+  if (first.ok) return;
+  const transient =
+    first.status === 0 || first.status === 502 || first.status === 503 || first.status === 504;
+  if (!transient) return;
+  await new Promise((r) => setTimeout(r, 6000));
+  await getHealthOnce(base);
 }
 
 async function callActivate(key, machineId) {
@@ -309,6 +388,7 @@ async function activateLicense(rawKey) {
     return { ok: false, message: "LICENSE_API_MISSING" };
   }
 
+  await wakeLicenseServer(apiBase);
   const res = await callActivate(key, machineId);
   if (!res.ok || !res.json?.ok) {
     return {

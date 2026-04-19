@@ -9,3 +9,4 @@ license-server/data/
 license-server/output/
 license-server/keys.json
 electron/license-runtime-url.cjs
+neon.txt

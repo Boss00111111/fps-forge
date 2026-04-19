@@ -37,6 +37,11 @@ const BACKGROUND_KILL_PATTERNS = [
   "armourycrate",
   "corsair",
   "razer",
+  "slack",
+  "skype",
+  "zoom",
+  "webex",
+  "gotomeeting",
 ];
 
 async function runExec(file, args) {
@@ -330,12 +335,75 @@ async function flushDns() {
   }
 }
 
+/**
+ * Ask Windows to trim each process working set (soft hint). Does not kill apps;
+ * frees reclaimable cache briefly. Big RAM % drops still need closing heavy apps.
+ */
+async function trimWorkingSets() {
+  if (process.platform !== "win32") {
+    return { ok: false, attempted: 0, succeeded: 0, errors: 0, message: "Not Windows." };
+  }
+  const script = `
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class FpsRamTrim {
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern bool SetProcessWorkingSetSize(IntPtr proc, int min, int max);
+}
+'@
+    $skip = New-Object "System.Collections.Generic.HashSet[string]" ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($n in @(
+      "Idle","System","Registry","Secure System","csrss","wininit","services","lsass","svchost",
+      "smss","winlogon","fontdrvhost","MsMpEng","SecurityHealthService","Memory Compression",
+      "vmcompute","dwm","audiodg","spoolsv","WUDFHost","sihost","ctfmon","RuntimeBroker"
+    )) { [void]$skip.Add($n) }
+
+    $attempted = 0
+    $succeeded = 0
+    $errors = 0
+    foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) {
+      if (-not $p.Id -or $p.Id -le 4) { continue }
+      $nm = $p.ProcessName
+      if ([string]::IsNullOrWhiteSpace($nm)) { continue }
+      if ($skip.Contains($nm)) { continue }
+      $attempted++
+      try {
+        $h = $p.Handle
+        if ([FpsRamTrim]::SetProcessWorkingSetSize($h, -1, -1)) { $succeeded++ }
+      } catch {
+        $errors++
+      }
+    }
+    [pscustomobject]@{ attempted = $attempted; succeeded = $succeeded; errors = $errors } | ConvertTo-Json -Compress
+  `;
+  try {
+    const json = await runPowerShell(script);
+    const parsed = JSON.parse(json || "{}");
+    return {
+      ok: true,
+      attempted: Number(parsed.attempted || 0),
+      succeeded: Number(parsed.succeeded || 0),
+      errors: Number(parsed.errors || 0),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      attempted: 0,
+      succeeded: 0,
+      errors: 1,
+      message: e?.message || String(e),
+    };
+  }
+}
+
 async function runGameBoost() {
   const power = await setPowerPlan("high");
   const cleanup = await cleanTempFiles(800);
   const dns = await flushDns();
   const background = await closeBackgroundApps();
-  return { ok: true, power, cleanup, dns, background };
+  const ramTrim = await trimWorkingSets();
+  return { ok: true, power, cleanup, dns, background, ramTrim };
 }
 
 async function applyStreamPriorityBalance() {
@@ -713,6 +781,12 @@ function createWindow() {
     const idx = path.join(process.resourcesPath, "client", "dist", "index.html");
     win.loadFile(idx);
   }
+
+  // Keep taskbar/window title on "FPS Forge" (old cached HTML or dev server could still say "Boost PC").
+  win.webContents.on("page-title-updated", (event) => {
+    event.preventDefault();
+    win.setTitle("FPS Forge");
+  });
 
   win.on("closed", () => {
     win = null;

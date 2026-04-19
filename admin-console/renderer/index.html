@@ -32,14 +32,18 @@
           <span class="pill" id="apiBase">API: loading...</span>
           <span class="pill" id="healthState">Health: unknown</span>
         </div>
-        <p class="muted">Unesi ADMIN_TOKEN i klikni akcije. Ovo radi sa tvojim license-server backendom.</p>
+        <p class="muted">
+          Unesi ADMIN_TOKEN i URL. <b>Reload keys</b> = sav inventar (ne samo aktivacije). <b>Save key.txt</b> = isto u fajl.
+          Na Render Free mora biti <code>DATABASE_URL</code> (Neon) — u <code>/health</code> traži <code>storage: postgres</code>, inače ključevi nestaju posle deploya.
+        </p>
         <div class="row">
           <input id="adminToken" placeholder="ADMIN_TOKEN" />
           <input id="apiBaseInput" placeholder="http://127.0.0.1:3847" />
           <button id="btnSaveBase">Save API</button>
           <button id="btnStartServer">Start Local Server</button>
           <button id="btnHealth">Refresh Health</button>
-          <button id="btnLoad" class="primary">Load Activations</button>
+          <button id="btnLoad" class="primary">Reload keys (inventory)</button>
+          <button id="btnExportTxt">Save key.txt…</button>
         </div>
       </div>
 
@@ -71,8 +75,8 @@
         <div class="row">
           <span class="muted" id="rowsCount">0 rows</span>
           <select id="statusFilter">
-            <option value="all">all</option>
-            <option value="free">free</option>
+            <option value="all" selected>all</option>
+            <option value="free">free (not activated)</option>
             <option value="activated">activated</option>
             <option value="expired">expired</option>
           </select>
@@ -154,20 +158,42 @@
         return false;
       }
 
+      function effectiveStatus(r) {
+        if (r.status) return String(r.status);
+        if (r.uiStatus === "activated") return "activated";
+        return "free";
+      }
+
+      function effectiveExpired(r) {
+        if (typeof r.expired === "boolean") return r.expired;
+        if (!r.expiresAt) return false;
+        return new Date(r.expiresAt).getTime() < Date.now();
+      }
+
+      function displayStatus(r) {
+        if (r.uiStatus && r.uiStatus !== effectiveStatus(r)) return `${r.uiStatus}`;
+        return effectiveStatus(r);
+      }
+
       function renderRows(rows) {
         const body = el("tableBody");
         body.innerHTML = "";
         const filter = el("statusFilter").value;
         const filtered = (rows || []).filter((r) => {
+          const st = effectiveStatus(r);
+          const ex = effectiveExpired(r);
           if (filter === "all") return true;
-          if (filter === "expired") return Boolean(r.expired);
-          return String(r.status || "") === filter;
+          if (filter === "expired") return ex;
+          if (filter === "activated") return st === "activated";
+          if (filter === "free") return st !== "activated" && !ex;
+          return true;
         });
         for (const r of filtered) {
           const tr = document.createElement("tr");
+          const rowEx = effectiveExpired(r);
           tr.innerHTML = `
             <td>${r.key || ""}</td>
-            <td>${r.expired ? "expired" : (r.status || "-")}</td>
+            <td>${rowEx ? "expired" : displayStatus(r)}</td>
             <td>${r.tier || ""}</td>
             <td>${r.expiresAt || "-"}</td>
             <td>${r.machineId || ""}</td>
@@ -179,6 +205,17 @@
         el("rowsCount").textContent = `${filtered.length} / ${rows?.length || 0} rows`;
       }
 
+      async function exportKeyTxt() {
+        if (!(await ensureServerOnline())) return;
+        const res = await window.adminApi.exportKeysTxt(token());
+        if (!res.ok) {
+          if (res.message === "CANCELLED") return log("Cancelled.");
+          log(res.message || "Export failed.");
+          return;
+        }
+        log(`Saved keys file: ${res.filePath}`);
+      }
+
       async function loadActivations() {
         if (!(await ensureServerOnline())) return;
         const res = await window.adminApi.listKeys(token());
@@ -187,9 +224,11 @@
           return;
         }
         renderRows(res.rows);
-        const freeCount = (res.rows || []).filter((x) => x.status === "free" && !x.expired).length;
-        const usedCount = (res.rows || []).filter((x) => x.status === "activated").length;
-        const expiredCount = (res.rows || []).filter((x) => x.expired).length;
+        const freeCount = (res.rows || []).filter(
+          (x) => effectiveStatus(x) !== "activated" && !effectiveExpired(x)
+        ).length;
+        const usedCount = (res.rows || []).filter((x) => effectiveStatus(x) === "activated").length;
+        const expiredCount = (res.rows || []).filter((x) => effectiveExpired(x)).length;
         log(`Loaded keys: total ${res.rows.length}, free ${freeCount}, activated ${usedCount}, expired ${expiredCount}.`);
       }
 
@@ -235,6 +274,7 @@
       el("btnStartServer").addEventListener("click", () => void startLocalServer());
       el("btnHealth").addEventListener("click", () => void refreshBaseAndHealth());
       el("btnLoad").addEventListener("click", () => void loadActivations());
+      el("btnExportTxt").addEventListener("click", () => void exportKeyTxt());
       el("btnCreate").addEventListener("click", () => void createKeys());
       el("btnReset").addEventListener("click", () => void resetKey());
       el("statusFilter").addEventListener("change", () => void loadActivations());

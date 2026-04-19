@@ -1,7 +1,8 @@
 /**
  * License API base URL (no trailing slash).
- * Priority at runtime: env FPSFORGE_LICENSE_API > userData license-api.json >
- *   packaged bundle (see below) > http://127.0.0.1:3847
+ * Priority at runtime: env FPSFORGE_LICENSE_API > userData license-api.json
+ *   (unless it is localhost and the packaged bundle is https) > packaged bundle >
+ *   http://127.0.0.1:3847
  *
  * For Gumroad builds, set FPSFORGE_LICENSE_BUNDLE_API when running `npm run dist`
  * so electron/license-runtime-url.cjs is generated (gitignored).

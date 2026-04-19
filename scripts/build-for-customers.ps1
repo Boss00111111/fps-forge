@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Pakuje FPS Forge portable .exe sa ugradjenim license API URL-om (za Gumroad kupce).
+  Pakuje FPS Forge (zip + win-unpacked) sa ugradjenim license API URL-om. Za jedan .exe: npm run dist:portable izvan OneDrive.
 
 .DESCRIPTION
   Postavi FPSFORGE_LICENSE_BUNDLE_API i pokrene npm run dist.
@@ -29,6 +29,12 @@ if ($url -notmatch "^https://") {
 Write-Host "Root: $root" -ForegroundColor Cyan
 Write-Host "License API: $url" -ForegroundColor Cyan
 
+# NSIS/7z temp files + output in OneDrive can break portable packaging; keep temp off synced folders.
+$buildTemp = Join-Path $env:LOCALAPPDATA "fpsforge-eb-temp"
+New-Item -ItemType Directory -Force -Path $buildTemp | Out-Null
+$env:TEMP = $buildTemp
+$env:TMP = $buildTemp
+
 Push-Location $root
 try {
   $env:FPSFORGE_LICENSE_BUNDLE_API = $url
@@ -41,7 +47,14 @@ finally {
 }
 
 $release = Join-Path $root "release"
+$localCopy = Join-Path $env:LOCALAPPDATA "FPSForge"
 Write-Host ""
 Write-Host "GOTOVO. Portable exe je u:" -ForegroundColor Green
 Write-Host "  $release" -ForegroundColor Yellow
 Get-ChildItem $release -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  -> $($_.FullName)" }
+Write-Host ""
+Write-Host "Pokretanje iz OneDrive mape cesto daje 'file not found'. Kopija na lokalnom disku:" -ForegroundColor Green
+Write-Host "  $localCopy" -ForegroundColor Yellow
+Get-ChildItem $localCopy -Filter "FPS-Forge-*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  -> $($_.FullName)" }
+Write-Host ""
+Write-Host "Za test bez zipa: $release\win-unpacked\FPS Forge.exe" -ForegroundColor DarkGray

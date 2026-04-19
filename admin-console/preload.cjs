@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld("adminApi", {
   listActivations: (token) => ipcRenderer.invoke("admin:listActivations", token),
   resetKey: (token, key) => ipcRenderer.invoke("admin:resetKey", token, key),
   createKeys: (token, payload) => ipcRenderer.invoke("admin:createKeys", token, payload),
+  exportKeysTxt: (token) => ipcRenderer.invoke("admin:exportKeysTxt", token),
 });

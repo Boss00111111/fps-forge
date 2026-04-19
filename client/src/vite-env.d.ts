@@ -59,6 +59,13 @@ declare global {
         cleanup: { ok: boolean; deleted: number; failed: number; folder: string };
         dns: { ok: boolean; message?: string };
         background: { ok: boolean; attempted: string[]; closed: string[]; failed: string[] };
+        ramTrim: {
+          ok: boolean;
+          attempted: number;
+          succeeded: number;
+          errors: number;
+          message?: string;
+        };
       }>;
       runStreamMode: () => Promise<{
         ok: boolean;
@@ -68,6 +75,13 @@ declare global {
           cleanup: { ok: boolean; deleted: number; failed: number; folder: string };
           dns: { ok: boolean; message?: string };
           background: { ok: boolean; attempted: string[]; closed: string[]; failed: string[] };
+          ramTrim: {
+            ok: boolean;
+            attempted: number;
+            succeeded: number;
+            errors: number;
+            message?: string;
+          };
         };
         streamBalance: {
           ok: boolean;
@@ -94,6 +108,13 @@ declare global {
           cleanup: { ok: boolean; deleted: number; failed: number; folder: string };
           dns: { ok: boolean; message?: string };
           background: { ok: boolean; attempted: string[]; closed: string[]; failed: string[] };
+          ramTrim: {
+            ok: boolean;
+            attempted: number;
+            succeeded: number;
+            errors: number;
+            message?: string;
+          };
         };
         registry: {
           ok: boolean;

@@ -28,6 +28,11 @@ type Translation = {
   quickTempClean: string;
   topProcesses: string;
   noData: string;
+  loadPillCpu: string;
+  loadPillDisk: string;
+  loadPillRam: string;
+  loadPillProcesses: string;
+  dashboardRamExplain: string;
   boostControls: string;
   boostHint: string;
   boostHintNoUltimate: string;
@@ -66,11 +71,23 @@ type Translation = {
   backgroundDone: (closed: number, attempted: number, names: string) => string;
   backgroundFailed: string;
   gameBoostFailed: string;
-  gameBoostDone: (deleted: number, dnsOk: boolean, closed: number) => string;
+  gameBoostDone: (
+    deleted: number,
+    dnsOk: boolean,
+    closed: number,
+    trimOk: number,
+    trimAttempted: number
+  ) => string;
   steamModeFailed: string;
   steamLaunched: string;
   steamLaunchFail: string;
-  steamModeDone: (launch: string, deleted: number, closed: number) => string;
+  steamModeDone: (
+    launch: string,
+    deleted: number,
+    closed: number,
+    trimOk: number,
+    trimAttempted: number
+  ) => string;
   licenseTitle: string;
   licenseSubtitle: string;
   licenseKeyLabel: string;
@@ -88,6 +105,7 @@ type Translation = {
   licenseServerSaved: string;
   licenseServerBadUrl: string;
   licenseOffline: string;
+  licenseActivationTimeout: string;
   licenseKeyOnlyHint: string;
 };
 
@@ -127,6 +145,12 @@ const translations: Record<Language, Translation> = {
     quickTempClean: "Quick temp clean",
     topProcesses: "Top memory processes",
     noData: "No data.",
+    loadPillCpu: "CPU load",
+    loadPillDisk: "Disk load",
+    loadPillRam: "RAM usage",
+    loadPillProcesses: "Active processes",
+    dashboardRamExplain:
+      "Same as “used RAM” above. One-Click Boost trims Windows working sets and closes tracked background apps — it cannot delete RAM your browser or IDE still needs. For a big drop, close those apps or tabs; the % can climb again as caches refill.",
     boostControls: "Game Boost Controls",
     boostHint: "Recommended order: High/Ultimate plan, cleanup, DNS flush, then launch your game.",
     boostHintNoUltimate: "Recommended order: High plan, cleanup, DNS flush, then launch your game.",
@@ -171,13 +195,13 @@ const translations: Record<Language, Translation> = {
       `Closed ${closed}/${attempted} processes: ${names}.`,
     backgroundFailed: "Background cleanup failed.",
     gameBoostFailed: "Game boost failed.",
-    gameBoostDone: (deleted, dnsOk, closed) =>
-      `Boost complete: temp ${deleted} deleted, DNS ${dnsOk ? "OK" : "FAIL"}, background ${closed} closed.`,
+    gameBoostDone: (deleted, dnsOk, closed, trimOk, trimAttempted) =>
+      `Boost complete: temp ${deleted} deleted, DNS ${dnsOk ? "OK" : "FAIL"}, background ${closed} closed, RAM trim ${trimOk}/${trimAttempted} processes (soft Windows hint — heavy apps still dominate).`,
     steamModeFailed: "Stream mode failed.",
     steamLaunched: "OBS/Game balance applied",
     steamLaunchFail: "Stream balance failed",
-    steamModeDone: (launch, deleted, closed) =>
-      `${launch}. Temp ${deleted}, background closed ${closed}.`,
+    steamModeDone: (launch, deleted, closed, trimOk, trimAttempted) =>
+      `${launch}. Temp ${deleted}, background closed ${closed}, RAM trim ${trimOk}/${trimAttempted}.`,
     licenseTitle: "Activate FPS Forge",
     licenseSubtitle: "One license key works on one PC only. Enter your purchase key.",
     licenseKeyLabel: "License key",
@@ -198,6 +222,8 @@ const translations: Record<Language, Translation> = {
     licenseServerBadUrl: "URL must start with https:// (or http://localhost for testing).",
     licenseOffline:
       "Cannot reach the license server. Check your internet, paste the correct URL below, or wait ~60s if the host was sleeping (free hosting).",
+    licenseActivationTimeout:
+      "License server did not answer in time. Free hosts (e.g. Render) can need 45–90s on first wake: wait, then click Activate again. In the dashboard open Logs — fix crashes; ignore a separate failed copy on another host (e.g. Railway) if your app uses Render. Key format: FFG-XXXX-XXXX-XXXX-XXXX, no spaces.",
     licenseKeyOnlyHint: "Enter your purchase key below — the server is already configured in this build.",
   },
   de: {
@@ -225,6 +251,12 @@ const translations: Record<Language, Translation> = {
     quickTempClean: "Schnelles TEMP-Cleanup",
     topProcesses: "Top Speicherprozesse",
     noData: "Keine Daten.",
+    loadPillCpu: "CPU-Last",
+    loadPillDisk: "Festplatten-Last",
+    loadPillRam: "RAM-Nutzung",
+    loadPillProcesses: "Aktive Prozesse",
+    dashboardRamExplain:
+      "Wie der belegte RAM oben. One-Click Boost trimmt Working Sets und schliesst verfolgte Hintergrund-Apps — RAM, das Browser oder IDE aktiv brauchen, verschwindet nicht. Fuer einen grossen Abfall: Programme/Tabs schliessen; der Wert kann steigen, wenn Caches wieder gefuellt werden.",
     boostControls: "Game Boost Steuerung",
     boostHint:
       "Empfohlene Reihenfolge: High/Ultimate Plan, Cleanup, DNS Flush, dann Spiel starten.",
@@ -271,13 +303,13 @@ const translations: Record<Language, Translation> = {
       `${closed}/${attempted} Prozesse geschlossen: ${names}.`,
     backgroundFailed: "Hintergrund-Cleanup fehlgeschlagen.",
     gameBoostFailed: "Game Boost fehlgeschlagen.",
-    gameBoostDone: (deleted, dnsOk, closed) =>
-      `Boost fertig: temp ${deleted} geloescht, DNS ${dnsOk ? "OK" : "FAIL"}, Hintergrund ${closed} geschlossen.`,
+    gameBoostDone: (deleted, dnsOk, closed, trimOk, trimAttempted) =>
+      `Boost fertig: temp ${deleted} geloescht, DNS ${dnsOk ? "OK" : "FAIL"}, Hintergrund ${closed} geschlossen, RAM-Trim ${trimOk}/${trimAttempted} Prozesse (Windows-Hinweis — grosse Apps dominieren weiter).`,
     steamModeFailed: "Stream Modus fehlgeschlagen.",
     steamLaunched: "OBS/Game Balance angewendet",
     steamLaunchFail: "Stream Balance fehlgeschlagen",
-    steamModeDone: (launch, deleted, closed) =>
-      `${launch}. Temp ${deleted}, Hintergrund geschlossen ${closed}.`,
+    steamModeDone: (launch, deleted, closed, trimOk, trimAttempted) =>
+      `${launch}. Temp ${deleted}, Hintergrund ${closed}, RAM-Trim ${trimOk}/${trimAttempted}.`,
     licenseTitle: "FPS Forge aktivieren",
     licenseSubtitle: "Ein Lizenzschluessel = ein PC. Gib deinen Kauf-Key ein.",
     licenseKeyLabel: "Lizenzschluessel",
@@ -298,6 +330,8 @@ const translations: Record<Language, Translation> = {
     licenseServerBadUrl: "Nur https:// oder http://localhost zum Testen.",
     licenseOffline:
       "License-Server nicht erreichbar. Internet pruefen, URL unten einfuegen, oder ~60s warten (Free-Hosting).",
+    licenseActivationTimeout:
+      "Server antwortet nicht rechtzeitig (Timeout). Render: Logs pruefen, neu deployen. Leerzeichen im Key entfernen.",
     licenseKeyOnlyHint: "Nur Kaufschluessel eingeben — Server ist in diesem Build fest eingetragen.",
   },
   bs: {
@@ -325,6 +359,12 @@ const translations: Record<Language, Translation> = {
     quickTempClean: "Brzo TEMP ciscenje",
     topProcesses: "Top procesi po memoriji",
     noData: "Nema podataka.",
+    loadPillCpu: "CPU opterecenje",
+    loadPillDisk: "Disk opterecenje",
+    loadPillRam: "Upotreba RAM-a",
+    loadPillProcesses: "Aktivni procesi",
+    dashboardRamExplain:
+      "Isto kao zauzet RAM iznad. One-Click Boost trimuje working setove i zatvara pracene pozadinske appove — ne moze ukloniti RAM koji browser ili IDE aktivno drzi. Za veliki pad: zatvori te programe/tabove; postotak moze opet porasti kad se cache napuni.",
     boostControls: "Game Boost kontrole",
     boostHint: "Predlozeni redoslijed: High/Ultimate plan, cleanup, DNS flush pa pokreni igru.",
     boostHintNoUltimate: "Predlozeni redoslijed: High plan, cleanup, DNS flush pa pokreni igru.",
@@ -368,13 +408,13 @@ const translations: Record<Language, Translation> = {
       `Zatvoreno ${closed}/${attempted} procesa: ${names}.`,
     backgroundFailed: "Background cleanup nije uspio.",
     gameBoostFailed: "Game boost nije uspio.",
-    gameBoostDone: (deleted, dnsOk, closed) =>
-      `Boost gotov: temp ${deleted} obrisano, DNS ${dnsOk ? "OK" : "FAIL"}, background ${closed} zatvoreno.`,
+    gameBoostDone: (deleted, dnsOk, closed, trimOk, trimAttempted) =>
+      `Boost gotov: temp ${deleted} obrisano, DNS ${dnsOk ? "OK" : "FAIL"}, background ${closed} zatvoreno, RAM trim ${trimOk}/${trimAttempted} procesa (meki Windows hint — teski programi i dalje drze memoriju).`,
     steamModeFailed: "Stream mode nije uspio.",
     steamLaunched: "OBS/Game balans primijenjen",
     steamLaunchFail: "Stream balans nije uspio",
-    steamModeDone: (launch, deleted, closed) =>
-      `${launch}. Temp ${deleted}, background zatvoreno ${closed}.`,
+    steamModeDone: (launch, deleted, closed, trimOk, trimAttempted) =>
+      `${launch}. Temp ${deleted}, background zatvoreno ${closed}, RAM trim ${trimOk}/${trimAttempted}.`,
     licenseTitle: "Aktiviraj FPS Forge",
     licenseSubtitle: "Jedan kljuc = jedan PC. Unesi kljuc koji si kupio.",
     licenseKeyLabel: "Licencni kljuc",
@@ -395,6 +435,8 @@ const translations: Record<Language, Translation> = {
     licenseServerBadUrl: "Mora poceti sa https:// (ili http://localhost za test).",
     licenseOffline:
       "Ne moze se povezati na license server. Provjeri internet, zalijepi tacan URL ispod, ili pricekaj ~60s ako je host 'spavao' (besplatan hosting).",
+    licenseActivationTimeout:
+      "Server za licence nije odgovorio na vrijeme. Besplatan hosting (Render) prvih 45–90s 'budi' servis — pricekaj pa klikni opet Aktiviraj. U dashboardu Logs; ako imas FAILED kopiju na drugom hostu (npr. Railway), a app koristi Render URL, to nije isti server. Kljuc: FFG-XXXX-XXXX-XXXX-XXXX bez razmaka.",
     licenseKeyOnlyHint: "Unesi samo kljuc koji si kupio — server je vec ugradjen u ovu verziju aplikacije.",
   },
   fr: {
@@ -422,6 +464,12 @@ const translations: Record<Language, Translation> = {
     quickTempClean: "Nettoyage TEMP rapide",
     topProcesses: "Processus memoire principaux",
     noData: "Pas de donnees.",
+    loadPillCpu: "Charge CPU",
+    loadPillDisk: "Charge disque",
+    loadPillRam: "Utilisation RAM",
+    loadPillProcesses: "Processus actifs",
+    dashboardRamExplain:
+      "Comme la RAM utilisee ci-dessus. One-Click Boost rogne les working sets et ferme des apps suivies — il ne supprime pas la RAM dont le navigateur ou l'IDE a besoin. Pour un gros ecart: ferme ces applis; le % peut remonter quand le cache se remplit.",
     boostControls: "Controles Game Boost",
     boostHint:
       "Ordre recommande: plan High/Ultimate, nettoyage, DNS flush, puis lancement du jeu.",
@@ -468,13 +516,13 @@ const translations: Record<Language, Translation> = {
       `${closed}/${attempted} processus fermes: ${names}.`,
     backgroundFailed: "Le nettoyage arriere-plan a echoue.",
     gameBoostFailed: "Le game boost a echoue.",
-    gameBoostDone: (deleted, dnsOk, closed) =>
-      `Boost termine: temp ${deleted} supprimes, DNS ${dnsOk ? "OK" : "FAIL"}, arriere-plan ${closed} fermes.`,
+    gameBoostDone: (deleted, dnsOk, closed, trimOk, trimAttempted) =>
+      `Boost termine: temp ${deleted} supprimes, DNS ${dnsOk ? "OK" : "FAIL"}, arriere-plan ${closed} fermes, RAM trim ${trimOk}/${trimAttempted} processus (hint Windows — grosses applis dominent).`,
     steamModeFailed: "Le mode Stream a echoue.",
     steamLaunched: "Equilibrage OBS/Jeu applique",
     steamLaunchFail: "Echec de l'equilibrage stream",
-    steamModeDone: (launch, deleted, closed) =>
-      `${launch}. Temp ${deleted}, arriere-plan ferme ${closed}.`,
+    steamModeDone: (launch, deleted, closed, trimOk, trimAttempted) =>
+      `${launch}. Temp ${deleted}, arriere-plan ferme ${closed}, RAM trim ${trimOk}/${trimAttempted}.`,
     licenseTitle: "Activer FPS Forge",
     licenseSubtitle: "Une cle = un seul PC. Entre ta cle d'achat.",
     licenseKeyLabel: "Cle de licence",
@@ -495,6 +543,8 @@ const translations: Record<Language, Translation> = {
     licenseServerBadUrl: "Utilise https:// (ou http://localhost pour test).",
     licenseOffline:
       "Serveur inaccessible. Verifie internet, URL ci-dessous, ou attends ~60s (hebergement gratuit).",
+    licenseActivationTimeout:
+      "Pas de reponse du serveur (delai depasse). Render: Logs, redeploy. Enleve les espaces dans la cle.",
     licenseKeyOnlyHint: "Entre uniquement ta cle — le serveur est deja configure dans cette version.",
   },
   it: {
@@ -522,6 +572,12 @@ const translations: Record<Language, Translation> = {
     quickTempClean: "Pulizia TEMP rapida",
     topProcesses: "Processi principali per memoria",
     noData: "Nessun dato.",
+    loadPillCpu: "Carico CPU",
+    loadPillDisk: "Carico disco",
+    loadPillRam: "Utilizzo RAM",
+    loadPillProcesses: "Processi attivi",
+    dashboardRamExplain:
+      "Come la RAM usata sopra. One-Click Boost riduce i working set e chiude app monitorate — non libera la RAM che browser o IDE stanno usando. Per un calo forte: chiudi quelle app; la percentuale puo risalire quando la cache si riempie.",
     boostControls: "Controlli Game Boost",
     boostHint:
       "Ordine consigliato: piano High/Ultimate, pulizia, DNS flush, poi avvia il gioco.",
@@ -568,13 +624,13 @@ const translations: Record<Language, Translation> = {
       `Chiusi ${closed}/${attempted} processi: ${names}.`,
     backgroundFailed: "Pulizia background non riuscita.",
     gameBoostFailed: "Game boost non riuscito.",
-    gameBoostDone: (deleted, dnsOk, closed) =>
-      `Boost completato: temp ${deleted} eliminati, DNS ${dnsOk ? "OK" : "FAIL"}, background ${closed} chiusi.`,
+    gameBoostDone: (deleted, dnsOk, closed, trimOk, trimAttempted) =>
+      `Boost completato: temp ${deleted} eliminati, DNS ${dnsOk ? "OK" : "FAIL"}, background ${closed} chiusi, RAM trim ${trimOk}/${trimAttempted} processi (suggerimento Windows — le app pesanti restano).`,
     steamModeFailed: "Modalita Stream non riuscita.",
     steamLaunched: "Bilanciamento OBS/Gioco applicato",
     steamLaunchFail: "Bilanciamento stream fallito",
-    steamModeDone: (launch, deleted, closed) =>
-      `${launch}. Temp ${deleted}, background chiusi ${closed}.`,
+    steamModeDone: (launch, deleted, closed, trimOk, trimAttempted) =>
+      `${launch}. Temp ${deleted}, background chiusi ${closed}, RAM trim ${trimOk}/${trimAttempted}.`,
     licenseTitle: "Attiva FPS Forge",
     licenseSubtitle: "Una chiave = un solo PC. Inserisci la chiave acquistata.",
     licenseKeyLabel: "Chiave di licenza",
@@ -595,6 +651,8 @@ const translations: Record<Language, Translation> = {
     licenseServerBadUrl: "Deve iniziare con https:// (o http://localhost per test).",
     licenseOffline:
       "Impossibile raggiungere il server. Controlla internet, URL sotto, o attendi ~60s (hosting gratuito).",
+    licenseActivationTimeout:
+      "Il server non risponde in tempo (timeout). Render: Log, redeploy. Rimuovi spazi dalla chiave.",
     licenseKeyOnlyHint: "Inserisci solo la chiave — il server e gia incluso in questa build.",
   },
 };
@@ -724,6 +782,10 @@ export function App() {
   const premiumText = premiumUi[language];
 
   useEffect(() => {
+    document.title = "FPS Forge";
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(LANG_STORAGE_KEY, language);
   }, [language]);
 
@@ -841,7 +903,16 @@ export function App() {
         setLog(t.gameBoostFailed);
         return;
       }
-      setLog(t.gameBoostDone(r.cleanup.deleted, r.dns.ok, r.background.closed.length));
+      const rt = r.ramTrim;
+      setLog(
+        t.gameBoostDone(
+          r.cleanup.deleted,
+          r.dns.ok,
+          r.background.closed.length,
+          rt?.succeeded ?? 0,
+          rt?.attempted ?? 0
+        )
+      );
     });
 
   const runStreamMode = () =>
@@ -855,11 +926,14 @@ export function App() {
       const launch = balance?.ok
         ? `${t.steamLaunched} (OBS ${balance.obsAdjusted ?? 0}/${balance.obsFound ?? 0}, Game ${balance.gamesAdjusted ?? 0}/${balance.gamesFound ?? 0})`
         : `${t.steamLaunchFail}${balance?.message ? `: ${balance.message}` : ""}`;
+      const rt = r.boost.ramTrim;
       setLog(
         t.steamModeDone(
           launch,
           r.boost.cleanup.deleted,
-          r.boost.background.closed.length
+          r.boost.background.closed.length,
+          rt?.succeeded ?? 0,
+          rt?.attempted ?? 0
         )
       );
     });
@@ -1042,7 +1116,24 @@ export function App() {
         }
       }
 
-      const r = await api.activateLicense(licenseKeyInput);
+      const keyForActivate = licenseKeyInput.replace(/\s+/g, "").trim();
+      /* Two server attempts × 60s fetch + pause — must exceed main-process budget */
+      const ACTIVATE_UI_MS = 150000;
+      let r: Awaited<ReturnType<NonNullable<Window["boostPc"]>["activateLicense"]>>;
+      try {
+        r = await Promise.race([
+          api.activateLicense(keyForActivate),
+          new Promise<never>((_, rej) => {
+            setTimeout(() => rej(new Error("CLIENT_ACTIVATION_TIMEOUT")), ACTIVATE_UI_MS);
+          }),
+        ]);
+      } catch (e) {
+        if (String((e as Error)?.message || e) === "CLIENT_ACTIVATION_TIMEOUT") {
+          setLicenseErr(t.licenseActivationTimeout);
+          return;
+        }
+        throw e;
+      }
       if (!r?.ok) {
         const msg = String(r?.message || "");
         if (msg === "LICENSE_SERVER_OFFLINE") {
@@ -1050,10 +1141,12 @@ export function App() {
           setLicenseInfo(stFresh);
           const base = String(stFresh?.apiBase || "").trim();
           setLicenseErr(`${t.licenseOffline}${base ? ` (${base})` : ""}`);
+        } else if (msg === "LICENSE_ACTIVATION_TIMEOUT") {
+          setLicenseErr(t.licenseActivationTimeout);
         } else if (msg === "KEY_ALREADY_USED") {
           setLicenseErr("This key is already used on another PC.");
         } else if (msg === "INVALID_KEY") {
-          setLicenseErr("Invalid key. Check the key and try again.");
+          setLicenseErr("Invalid key. Copy-paste again; remove spaces; format FFG-XXXX-XXXX-XXXX-XXXX.");
         } else {
           setLicenseErr(r?.message || t.licenseError);
         }
@@ -1262,22 +1355,23 @@ export function App() {
                 </p>
                 <div className="load-grid">
                   <div className={`load-pill ${cpuTone}`}>
-                    <span>CPU Load</span>
+                    <span>{t.loadPillCpu}</span>
                     <strong>{stats ? `${stats.cpuLoadPercent.toFixed(1)}%` : "—"}</strong>
                   </div>
                   <div className={`load-pill ${diskTone}`}>
-                    <span>Disk Load</span>
+                    <span>{t.loadPillDisk}</span>
                     <strong>{stats ? `${stats.diskLoadPercent.toFixed(1)}%` : "—"}</strong>
                   </div>
                   <div className={`load-pill ${memTone}`}>
-                    <span>Memory Pressure</span>
+                    <span>{t.loadPillRam}</span>
                     <strong>{stats ? `${stats.memUsedPercent.toFixed(1)}%` : "—"}</strong>
                   </div>
                   <div className="load-pill neutral">
-                    <span>Active Processes</span>
+                    <span>{t.loadPillProcesses}</span>
                     <strong>{stats?.processCount ?? "—"}</strong>
                   </div>
                 </div>
+                <p className="muted small">{t.dashboardRamExplain}</p>
               </div>
 
               <div className="boost-card">

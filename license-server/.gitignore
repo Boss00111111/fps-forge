@@ -1,0 +1,6 @@
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.migrated.bak
+neon.txt
